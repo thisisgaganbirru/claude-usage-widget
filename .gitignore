@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+out/
+.webpack/
+
+# Claude AI / Copilot files
+.claude.md
+CLAUDE.md
+.claude/
+.github/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local

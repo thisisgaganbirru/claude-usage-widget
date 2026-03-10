@@ -168,5 +168,7 @@ Transparent areas around the widget card pass mouse events through to underlying
 
 ## License
 
-MIT
+MIT © [Gagansai Birru](https://github.com/thisisgaganbirru)
+
+See [LICENSE](./LICENSE) for full text.
 
