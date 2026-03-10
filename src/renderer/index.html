@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Claude Usage Widget</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        width: 100vw;
+        height: 100vh;
+        background: transparent;
+        color: white;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+
+      #root {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      .widget {
+        width: 360px;
+        background: rgba(24, 24, 27, 0.97);
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        padding: 16px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      }
+      .widget-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      }
+      .widget-title {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .logo {
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        background: linear-gradient(135deg, #d97757, #c4613f);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        font-weight: 800;
+        color: white;
+        flex-shrink: 0;
+      }
+      .badge {
+        font-size: 10px;
+        color: rgba(255, 255, 255, 0.35);
+        font-weight: 500;
+        padding: 2px 7px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 4px;
+      }
+      .section {
+        margin-bottom: 16px;
+      }
+      .section-label {
+        font-size: 12px;
+        font-weight: 600;
+        margin-bottom: 8px;
+        display: flex;
+        justify-content: space-between;
+      }
+      .usage-text {
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.6);
+      }
+      .progress-bar {
+        height: 6px;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 3px;
+        overflow: hidden;
+        margin-bottom: 12px;
+      }
+      .progress-fill {
+        height: 100%;
+        background: linear-gradient(
+          90deg,
+          #d97757 0%,
+          #6b9eff 50%,
+          #10b981 100%
+        );
+        border-radius: 3px;
+        width: 35%;
+      }
+      .reset-info {
+        margin-top: 12px;
+        padding: 8px 10px;
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 8px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .reset-label {
+        font-size: 10px;
+        color: rgba(255, 255, 255, 0.3);
+        font-weight: 500;
+      }
+      .reset-time {
+        font-size: 13px;
+        color: #d97757;
+        font-weight: 700;
+        font-family: "SF Mono", "JetBrains Mono", monospace;
+      }
+      .footer {
+        padding-top: 12px;
+        border-top: 1px solid rgba(255, 255, 255, 0.04);
+        font-size: 10px;
+        color: rgba(255, 255, 255, 0.25);
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <!-- Static fallback while React loads -->
+      <div class="widget">
+        <div class="widget-header">
+          <div class="widget-title">
+            <div class="logo">C</div>
+            <span>Plan usage limits</span>
+          </div>
+          <div class="badge">Pro</div>
+        </div>
+
+        <div class="section">
+          <div class="section-label">
+            <span>Weekly limits</span>
+            <span class="usage-text">35% used</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill"></div>
+          </div>
+          <div class="usage-text">Resets Wed 12:59 PM</div>
+        </div>
+
+        <div class="reset-info">
+          <div class="reset-label">Resets in</div>
+          <div class="reset-time">3d 15:42:18</div>
+        </div>
+
+        <div class="footer">Last updated: just now ↻</div>
+      </div>
+    </div>
+
+    <script>
+      // React failure detector - if React doesn't render within 5 seconds, show error
+      setTimeout(() => {
+        const root = document.getElementById("root");
+        if (
+          root &&
+          root.children.length === 1 &&
+          root.children[0].className === "widget"
+        ) {
+          console.error(
+            "❌ React failed to mount - static fallback still showing",
+          );
+          root.innerHTML =
+            '<div style="color: #d97757; padding: 40px; text-align: center; font-family: monospace; font-size: 13px;"><strong>⚠️ React Failed to Load</strong><br/><br/>Check console (F12) for errors</div>';
+        }
+      }, 5000);
+    </script>
+  </body>
+</html>
