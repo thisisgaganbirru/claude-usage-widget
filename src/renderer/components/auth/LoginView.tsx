@@ -51,6 +51,7 @@ export function LoginView(): React.ReactElement {
 
   return (
     <div
+      data-widget-card
       style={{
         width: "800px",
         height: "600px",
@@ -73,30 +74,6 @@ export function LoginView(): React.ReactElement {
           zIndex: 10,
         }}
       >
-        <button
-          onClick={() =>
-            (window as any).electron?.ipcRenderer?.invoke("app:minimize")
-          }
-          title="Minimize"
-          style={{
-            background: "none",
-            border: "none",
-            color: "rgba(255,255,255,0.5)",
-            fontSize: 18,
-            cursor: "pointer",
-            padding: "0 4px",
-            lineHeight: 1,
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.color = "#fff";
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.color =
-              "rgba(255,255,255,0.5)";
-          }}
-        >
-          ─
-        </button>
         <button
           onClick={() =>
             (window as any).electron?.ipcRenderer?.invoke("app:quit")
@@ -369,9 +346,7 @@ export function LoginView(): React.ReactElement {
               opacity: isLoading ? 0.55 : 1,
               fontSize: 14,
               transition: "opacity 0.2s, box-shadow 0.2s",
-              boxShadow: isLoading
-                ? "none"
-                : "0 4px 18px rgba(193,95,60,0.35)",
+              boxShadow: isLoading ? "none" : "0 4px 18px rgba(193,95,60,0.35)",
             }}
             onMouseEnter={(e) => {
               if (!isLoading) {

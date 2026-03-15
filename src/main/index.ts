@@ -61,11 +61,15 @@ function applyPinnedState(window: BrowserWindow): void {
   if (isPinned) window.moveTop();
 }
 
-// IPC handler to resize window
+// IPC handler to resize window — centers automatically when switching to login size
 ipcMain.handle("resize-window", (_event, width: number, height: number) => {
   if (isDev) console.log(`[IPC] Received resize request: ${width}x${height}`);
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.setSize(width, height);
+    // Center the window when switching to login view (800×600)
+    if (width === 800 && height === 600) {
+      mainWindow.center();
+    }
     if (isDev) console.log(`[Main] ✅ Window resized to ${width}x${height}`);
     return { success: true, size: { width, height } };
   }
