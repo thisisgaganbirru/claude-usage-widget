@@ -122,9 +122,8 @@ Transparent areas around the widget card pass mouse events through to underlying
 | ≤ 5 hours away                | `true`          | "Resets in X hr Y min"                              |
 | > 5 hours away (API fallback) | `false` (error) | "Something's off — try restarting the widget" (red) |
 
-### API Endpoint
+### API Transport
 
-- **URL**: `https://claude.ai/api/organizations/{orgId}/usage`
 - **Transport**: `electron.net` (NOT axios — required for Cloudflare bypass)
 - **Response**: JSON with `five_hour` and `seven_day` usage objects
 
@@ -170,10 +169,10 @@ Transparent areas around the widget card pass mouse events through to underlying
 - [ ] Usage history graph (7-day)
 - [ ] Threshold notifications (50%, 75%, 90%, 95%)
 - [ ] Settings UI (polling interval, notifications)
-- [ ] Multi-account support
 
 ### Phase 3
 
+- [ ] Multi-account support
 - [ ] macOS / Linux testing
 - [ ] Auto-updater
 - [ ] Code signing for distribution
