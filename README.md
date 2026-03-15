@@ -18,6 +18,7 @@ A real-time Claude API usage desktop widget for Windows. Displays your 5-hour se
 ## Views
 
 ### Small (Mini)
+
 - Compact single-card view (350×80px)
 - Current session % used + progress bar
 - Shows "Starts when a message is sent" when no active session
@@ -25,11 +26,13 @@ A real-time Claude API usage desktop widget for Windows. Displays your 5-hour se
 - Shows error hint if API returns unexpected reset time
 
 ### Medium (Compact)
+
 - Full session + weekly usage breakdown
 - Model usage bars (Opus / Sonnet / Haiku)
 - 7-day countdown timer
 
 ### Large (Expanded)
+
 - Detailed per-model usage
 - Weekly reset label
 - Full stats breakdown
@@ -48,14 +51,14 @@ A real-time Claude API usage desktop widget for Windows. Displays your 5-hour se
 
 ### Prerequisites
 
-- Node.js 18+ and npm
+- Node.js LTS only — **18.x, 20.x, or 22.x** (odd versions like 19, 21, 23, 25 are not supported)
 - A Claude.ai account (Free, Pro, or Max)
 
 ### Development
 
 ```bash
-# Install dependencies
-npm install
+# Install dependencies (use npm ci — respects the lock file exactly)
+npm ci
 
 # Start development server (hot reload)
 npm start
@@ -82,6 +85,7 @@ The installer is output to `out/make/` after `npm run make`.
 ### Three-Process Model
 
 **Main Process** (`src/main/`)
+
 - `index.ts` — App lifecycle, window creation, tray, IPC handlers (resize, move, pin, mouse passthrough)
 - `tray.ts` — System tray with dynamic usage icons
 - `auth/login-window.ts` — Embedded BrowserWindow for Claude.ai login (always centers on screen)
@@ -91,6 +95,7 @@ The installer is output to `out/make/` after `npm run make`.
 - `ipc/handlers.ts` — IPC handlers for auth, usage, poller, settings
 
 **Renderer Process** (`src/renderer/`)
+
 - `App.tsx` — Root component; handles view switching, mouse passthrough toggle
 - `components/widget/MiniView.tsx` — Small view
 - `components/widget/CompactView.tsx` — Medium view
@@ -101,6 +106,7 @@ The installer is output to `out/make/` after `npm run make`.
 - `hooks/useUsageData.ts` — IPC listener hook
 
 **Preload** (`src/preload/preload.js`)
+
 - Whitelist-based IPC bridge (invoke + send channels)
 - Exposes `window.electron.ipcRenderer`
 
@@ -110,10 +116,10 @@ Transparent areas around the widget card pass mouse events through to underlying
 
 ### Session Reset Logic (MiniView)
 
-| `resetTime` value | `sessionActive` | Shown |
-|---|---|---|
-| `null` | `false` | "Starts when a message is sent" |
-| ≤ 5 hours away | `true` | "Resets in X hr Y min" |
+| `resetTime` value             | `sessionActive` | Shown                                               |
+| ----------------------------- | --------------- | --------------------------------------------------- |
+| `null`                        | `false`         | "Starts when a message is sent"                     |
+| ≤ 5 hours away                | `true`          | "Resets in X hr Y min"                              |
 | > 5 hours away (API fallback) | `false` (error) | "Something's off — try restarting the widget" (red) |
 
 ### API Endpoint
@@ -131,6 +137,9 @@ Transparent areas around the widget card pass mouse events through to underlying
 
 ## Troubleshooting
 
+**`EBADENGINE` error on `npm ci`**
+→ You're on an unsupported Node.js version. Install Node.js LTS (18, 20, or 22) from [nodejs.org](https://nodejs.org) and retry.
+
 **Widget not visible after launch**
 → Check system tray (bottom-right `^` hidden icons), click the Claude icon
 
@@ -146,6 +155,7 @@ Transparent areas around the widget card pass mouse events through to underlying
 ## Roadmap
 
 ### Phase 1 ✅ (Current)
+
 - [x] Embedded browser authentication
 - [x] Live usage polling (5-hour + 7-day)
 - [x] Three view sizes (Small / Medium / Large)
@@ -156,12 +166,14 @@ Transparent areas around the widget card pass mouse events through to underlying
 - [x] Auto-start on Windows login
 
 ### Phase 2
+
 - [ ] Usage history graph (7-day)
 - [ ] Threshold notifications (50%, 75%, 90%, 95%)
 - [ ] Settings UI (polling interval, notifications)
 - [ ] Multi-account support
 
 ### Phase 3
+
 - [ ] macOS / Linux testing
 - [ ] Auto-updater
 - [ ] Code signing for distribution
@@ -171,4 +183,3 @@ Transparent areas around the widget card pass mouse events through to underlying
 MIT © [Gagansai Birru](https://github.com/thisisgaganbirru)
 
 See [LICENSE](./LICENSE) for full text.
-
