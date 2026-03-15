@@ -329,7 +329,7 @@ export function MiniView({
                 marginBottom: 6,
               }}
             >
-              Resets in {formatSessionReset(new Date(usageData.resetTime))}
+              Resets in {formatSessionReset(new Date(usageData.resetTime!))}
             </div>
           )}
 

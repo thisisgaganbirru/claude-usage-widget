@@ -24,7 +24,9 @@ export function useUsageData() {
         // Convert date strings to Date objects
         const usageData = {
           ...data.usageData,
-          resetTime: new Date(data.usageData.resetTime),
+          resetTime: data.usageData.resetTime
+            ? new Date(data.usageData.resetTime)
+            : null,
           timestamp: new Date(data.usageData.timestamp),
         };
         setUsageData(usageData);

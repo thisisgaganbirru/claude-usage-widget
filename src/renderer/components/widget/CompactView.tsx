@@ -172,15 +172,19 @@ export function CompactView({
   // ── Derived values ────────────────────────────────────────────────────────
   const pct = Math.min(100, Math.max(0, usageData.sevenDayUsage)); // 7-day %
   const sessionPct = Math.min(100, Math.max(0, usageData.percentageUsed)); // 5-hour %
-  // five_hour window is real if reset is within 5 hours; fallback is now+24h
-  const sessionActive =
-    new Date(usageData.resetTime).getTime() - Date.now() <= 5 * 60 * 60 * 1000;
+  // five_hour window: null = not started, ≤5h = active, >5h = error/fallback
+  const resetDiff =
+    usageData.resetTime != null
+      ? new Date(usageData.resetTime).getTime() - Date.now()
+      : null;
+  const sessionActive = resetDiff !== null && resetDiff <= 5 * 60 * 60 * 1000;
+  const sessionError = resetDiff !== null && resetDiff > 5 * 60 * 60 * 1000;
   const opusPct = Math.round(usageData.opusUsage ?? 0);
   const sonnetPct = Math.round(usageData.sonnetUsage ?? 0);
   const haikuPct = Math.max(0, Math.round(pct) - opusPct - sonnetPct); // remainder
 
   const resetDate = new Date(usageData.sevenDayResetTime);
-  const sessionResetDate = new Date(usageData.resetTime);
+  const sessionResetDate = usageData.resetTime ? new Date(usageData.resetTime) : null;
 
   const weeklyDayName = resetDate.toLocaleDateString("en-US", {
     weekday: "short",
@@ -190,13 +194,13 @@ export function CompactView({
     minute: "2-digit",
   });
 
-  const sessionDayName = sessionResetDate.toLocaleDateString("en-US", {
+  const sessionDayName = sessionResetDate?.toLocaleDateString("en-US", {
     weekday: "short",
-  });
-  const sessionTimeStr = sessionResetDate.toLocaleTimeString("en-US", {
+  }) ?? "—";
+  const sessionTimeStr = sessionResetDate?.toLocaleTimeString("en-US", {
     hour: "2-digit",
     minute: "2-digit",
-  });
+  }) ?? "—";
 
   const models: BarSegment[] = [
     { name: "Opus", used: opusPct, color: "#C15F3C" },
@@ -281,9 +285,11 @@ export function CompactView({
 
           {/* Subtitle: static hint only when no real five_hour window, otherwise shows reset time */}
           <div style={{ color: dimmer, fontSize: 11, marginBottom: 8 }}>
-            {!sessionActive
+            {sessionError
+              ? <span style={{ color: "#f87171" }}>Something's off — try restarting the widget</span>
+              : !sessionActive
               ? "Starts when a message is sent"
-              : `Resets in ${formatSessionReset(new Date(usageData.resetTime))}`}
+              : `Resets in ${formatSessionReset(new Date(usageData.resetTime!))}`}
           </div>
 
           {/* Thin blue session bar */}

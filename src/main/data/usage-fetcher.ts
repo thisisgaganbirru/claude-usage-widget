@@ -63,7 +63,8 @@ function netGet(url: string, headers: Record<string, string>): Promise<string> {
 async function getOrgId(sessionCookie: string): Promise<string> {
   if (cachedOrgId) return cachedOrgId;
 
-  if (isDev) console.log("[UsageFetcher] Fetching org ID from /api/organizations...");
+  if (isDev)
+    console.log("[UsageFetcher] Fetching org ID from /api/organizations...");
   const data = await netGet(
     "https://claude.ai/api/organizations",
     makeApiHeaders(sessionCookie),
@@ -80,7 +81,10 @@ async function getOrgId(sessionCookie: string): Promise<string> {
   cachedOrgName =
     ((org.name as string) ?? "").replace(/'s Organization$/i, "").trim() ||
     null;
-  if (isDev) console.log(`[UsageFetcher] Org ID: ${cachedOrgId}, Name: ${cachedOrgName}`);
+  if (isDev)
+    console.log(
+      `[UsageFetcher] Org ID: ${cachedOrgId}, Name: ${cachedOrgName}`,
+    );
   return cachedOrgId;
 }
 
@@ -98,16 +102,18 @@ export async function fetchUsageDataFromAPI(
   sessionCookie: string,
 ): Promise<UsageData> {
   const hasCookie = sessionCookie && sessionCookie !== "__electron_session__";
-  if (isDev) console.log(
-    `[UsageFetcher] Cookie present: ${hasCookie}, first 30 chars: ${sessionCookie?.substring(0, 30) ?? "none"}`,
-  );
+  if (isDev)
+    console.log(
+      `[UsageFetcher] Cookie present: ${hasCookie}, first 30 chars: ${sessionCookie?.substring(0, 30) ?? "none"}`,
+    );
 
   const orgId = await getOrgId(sessionCookie);
   const url = `https://claude.ai/api/organizations/${orgId}/usage`;
   if (isDev) console.log(`[UsageFetcher] Fetching usage from ${url}`);
 
   const data = await netGet(url, makeApiHeaders(sessionCookie));
-  if (isDev) console.log(`[UsageFetcher] Usage response length: ${data.length}`);
+  if (isDev)
+    console.log(`[UsageFetcher] Usage response length: ${data.length}`);
 
   const usageData = parseAPIResponse(data);
   return usageData;
@@ -162,10 +168,11 @@ function parseAPIResponse(data: string): UsageData {
   // 1. Plain JSON — try top-level then deep search
   try {
     const json = JSON.parse(data);
-    if (isDev) console.log(
-      "[UsageFetcher] Raw API JSON (first 500):",
-      JSON.stringify(json).substring(0, 500),
-    );
+    if (isDev)
+      console.log(
+        "[UsageFetcher] Raw API JSON (first 500):",
+        JSON.stringify(json).substring(0, 500),
+      );
 
     // Try the actual /api/organizations/{id}/usage shape first
     const shaped = extractFromUsageEndpoint(json);
@@ -245,9 +252,7 @@ function extractFromUsageEndpoint(json: unknown): UsageData | null {
   const extra = obj.extra_usage as Record<string, unknown> | null;
   const planType = extra?.is_enabled === true ? "Pro+" : "Pro";
 
-  const resetTime = fiveHourReset
-    ? new Date(fiveHourReset)
-    : getDefaultResetTime();
+  const resetTime = fiveHourReset ? new Date(fiveHourReset) : null;
   const sevenDayResetTime = sevenDayReset
     ? new Date(sevenDayReset)
     : getDefaultResetTime();
@@ -372,14 +377,16 @@ function parseRSCResponseLogged(data: string): UsageData | null {
       const json = JSON.parse(match[1]);
       const result = searchObjectDeep(json);
       if (result) {
-        if (isDev) console.log(
-          "[UsageFetcher] RSC match — raw object:",
-          JSON.stringify(json).substring(0, 500),
-        );
-        if (isDev) console.log(
-          "[UsageFetcher] RSC match — parsed result:",
-          JSON.stringify(result),
-        );
+        if (isDev)
+          console.log(
+            "[UsageFetcher] RSC match — raw object:",
+            JSON.stringify(json).substring(0, 500),
+          );
+        if (isDev)
+          console.log(
+            "[UsageFetcher] RSC match — parsed result:",
+            JSON.stringify(result),
+          );
         return result;
       }
     } catch {
@@ -427,35 +434,40 @@ function parseHTMLForUsageData(html: string): UsageData | null {
 
   if (chunks.length > 0) {
     const combined = chunks.join("\n");
-    if (isDev) console.log(
-      `[UsageFetcher] Found ${chunks.length} __next_f chunks (${combined.length} chars)`,
-    );
+    if (isDev)
+      console.log(
+        `[UsageFetcher] Found ${chunks.length} __next_f chunks (${combined.length} chars)`,
+      );
 
     // Search RSC data for date strings (billing reset dates) and model names
     const dateMatches = [
       ...combined.matchAll(/"(202\d-\d{2}-\d{2}T[^"]{5,50})"/g),
     ];
     if (dateMatches.length > 0) {
-      if (isDev) console.log(
-        `[UsageFetcher] Found ${dateMatches.length} date strings in flight data:`,
-      );
+      if (isDev)
+        console.log(
+          `[UsageFetcher] Found ${dateMatches.length} date strings in flight data:`,
+        );
       for (const dm of dateMatches.slice(0, 5)) {
         const pos = dm.index ?? 0;
-        if (isDev) console.log(
-          `  Date: ${dm[1]} — context: ...${combined.substring(Math.max(0, pos - 80), pos + 100)}...`,
-        );
+        if (isDev)
+          console.log(
+            `  Date: ${dm[1]} — context: ...${combined.substring(Math.max(0, pos - 80), pos + 100)}...`,
+          );
       }
     } else {
-      if (isDev) console.log("[UsageFetcher] No ISO date strings found in flight data");
+      if (isDev)
+        console.log("[UsageFetcher] No ISO date strings found in flight data");
     }
 
     // Search RSC data for API endpoint URLs
     const apiUrls = [...combined.matchAll(/"(\/api\/[^"]{5,100})"/g)];
     if (apiUrls.length > 0) {
       const uniqueUrls = [...new Set(apiUrls.map((m) => m[1]))];
-      if (isDev) console.log(
-        `[UsageFetcher] API URLs in RSC (${uniqueUrls.length} unique):`,
-      );
+      if (isDev)
+        console.log(
+          `[UsageFetcher] API URLs in RSC (${uniqueUrls.length} unique):`,
+        );
       for (const url of uniqueUrls.slice(0, 20)) {
         if (isDev) console.log(`  ${url}`);
       }
@@ -465,13 +477,14 @@ function parseHTMLForUsageData(html: string): UsageData | null {
       ...combined.matchAll(/["'](https?:\/\/[^"']+usage[^"']{0,100})["']/gi),
     ];
     if (usageUrlMatches.length > 0) {
-      if (isDev) console.log(
-        "[UsageFetcher] Usage URLs found:",
-        usageUrlMatches
-          .slice(0, 5)
-          .map((m) => m[1])
-          .join(", "),
-      );
+      if (isDev)
+        console.log(
+          "[UsageFetcher] Usage URLs found:",
+          usageUrlMatches
+            .slice(0, 5)
+            .map((m) => m[1])
+            .join(", "),
+        );
     }
 
     // Try RSC format on flight data
@@ -532,10 +545,11 @@ function searchForJsonWithUsageFields(text: string): UsageData | null {
           const json = JSON.parse(text.substring(start, end));
           const result = extractFromJsonObject(json);
           if (result) {
-            if (isDev) console.log(
-              `[UsageFetcher] Found usage data via field "${field}":`,
-              JSON.stringify(result),
-            );
+            if (isDev)
+              console.log(
+                `[UsageFetcher] Found usage data via field "${field}":`,
+                JSON.stringify(result),
+              );
             return result;
           }
         } catch {

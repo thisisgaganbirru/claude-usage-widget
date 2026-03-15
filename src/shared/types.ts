@@ -7,7 +7,7 @@ export interface UsageData {
   currentUsage: number; // five_hour.utilization (0-100 %)
   planLimit: number; // Always 100 (utilization is already %)
   percentageUsed: number; // five_hour.utilization
-  resetTime: Date; // five_hour.resets_at
+  resetTime: Date | null; // five_hour.resets_at — null when no active session
   sessionActive: boolean; // true when five_hour exists in API response
 
   // 7-day rolling window

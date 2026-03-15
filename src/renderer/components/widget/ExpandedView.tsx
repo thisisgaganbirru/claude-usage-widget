@@ -162,8 +162,11 @@ export function ExpandedView({
   const sonnetPct = Math.round(usageData.sonnetUsage ?? 0);
   const haikuPct = Math.max(0, pct - opusPct - sonnetPct);
   const resetDate = new Date(usageData.sevenDayResetTime);
-  const sessionResetDate = new Date(usageData.resetTime);
+  const sessionResetDate = usageData.resetTime
+    ? new Date(usageData.resetTime)
+    : null;
   const sessionActive =
+    sessionResetDate !== null &&
     sessionResetDate.getTime() - Date.now() <= 5 * 60 * 60 * 1000;
 
   // Models array — uses derived per-model values and new design colours
@@ -299,7 +302,7 @@ export function ExpandedView({
               >
                 {!sessionActive
                   ? "Starts when a message is sent"
-                  : `Resets in ${formatSessionReset(sessionResetDate)}`}
+                  : `Resets in ${formatSessionReset(sessionResetDate!)}`}
               </div>
               <ProgressBar percent={sessionPct} color="#6b9eff" height={6} />
             </div>

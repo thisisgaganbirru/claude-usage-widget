@@ -2,14 +2,14 @@
  * Production-grade session manager for Claude.ai authentication.
  *
  * Security model:
- * - Cookie is encrypted with electron-store using the machine's unique ID as key.
- * - This makes the stored cookie useless if the database file is extracted —
- *   it can only be decrypted on the same physical machine.
+ * - Cookie is encrypted with electron-store using a per-install UUID as key.
+ * - The UUID is generated once with crypto.randomUUID() and stored in a
+ *   separate unencrypted store — no native build tools required.
  * - We NEVER read, log, or store email/password — only the session cookie
  *   that Anthropic sets after a successful login.
  */
 import Store from "electron-store";
-import { machineIdSync } from "node-machine-id";
+import { randomUUID } from "crypto";
 import { session } from "electron";
 import isDev from "electron-is-dev";
 
@@ -30,19 +30,26 @@ interface SessionStore {
   expiresAt: number;
 }
 
-// Lazy-init so machineIdSync() is only called once on first use
+interface KeyStore {
+  installId: string;
+}
+
+// Lazy-init stores — created once on first use
+let _keyStore: Store<KeyStore> | null = null;
 let _store: Store<SessionStore> | null = null;
 
+/** Returns (or generates) a stable per-install UUID used as the encryption key. */
 function getEncryptionKey(): string {
-  try {
-    return machineIdSync();
-  } catch {
-    // Fallback if machine ID cannot be read (e.g. permissions, virtualised env)
-    console.warn(
-      "[SessionManager] machineIdSync() failed — using fallback key",
-    );
-    return "claude-widget-fallback-key-v1";
+  if (!_keyStore) {
+    _keyStore = new Store<KeyStore>({ name: "install-id" });
   }
+  let id = _keyStore.get("installId");
+  if (!id) {
+    id = randomUUID();
+    _keyStore.set("installId", id);
+    if (isDev) console.log("[SessionManager] Generated new install ID");
+  }
+  return id;
 }
 
 function getStore(): Store<SessionStore> {
@@ -65,7 +72,8 @@ export function saveSession(cookie: string): void {
   getStore().set("sessionCookie", cookie);
   getStore().set("savedAt", now);
   getStore().set("expiresAt", now + SESSION_TTL_MS);
-  if (isDev) console.log("[SessionManager] Session saved (encrypted, machine-locked)");
+  if (isDev)
+    console.log("[SessionManager] Session saved (encrypted, machine-locked)");
 }
 
 /**
@@ -114,9 +122,10 @@ export async function clearSessionCookies(): Promise<void> {
         cookie.name,
       );
     }
-    if (isDev) console.log(
-      `[SessionManager] Cleared ${cookies.length} claude.ai session cookie(s)`,
-    );
+    if (isDev)
+      console.log(
+        `[SessionManager] Cleared ${cookies.length} claude.ai session cookie(s)`,
+      );
   } catch (error) {
     console.error("[SessionManager] Failed to clear cookies:", error);
   }
