@@ -53,6 +53,7 @@ const ALLOWED_CHANNELS_ON = [
   // Auth events
   "auth:expired",
   "auth:login-success",
+  "auth:login-window-opened",
   // Poller events
   "poller:error",
   // Action events

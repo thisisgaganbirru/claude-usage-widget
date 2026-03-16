@@ -1,8 +1,7 @@
-module.exports = [
-  // Add support for native node modules
+const path = require("path");
+
+const nativeRules = [
   {
-    // We're specifying native_modules in the test because the asset relocator loader generates a
-    // "fake" .node file which is really a cjs file.
     test: /native_modules[/\\].+\.node$/,
     use: "node-loader",
   },
@@ -16,7 +15,9 @@ module.exports = [
       },
     },
   },
-  // TypeScript support
+];
+
+const commonRules = [
   {
     test: /\.tsx?$/,
     exclude: /(node_modules|.webpack)/,
@@ -27,12 +28,10 @@ module.exports = [
       },
     },
   },
-  // CSS support - Tailwind + PostCSS
   {
     test: /\.css$/,
     use: ["style-loader", "css-loader", "postcss-loader"],
   },
-  // Image / SVG assets
   {
     test: /\.(png|jpg|jpeg|gif|svg|ico)$/,
     use: [
@@ -46,3 +45,5 @@ module.exports = [
     ],
   },
 ];
+
+module.exports = { nativeRules, commonRules };

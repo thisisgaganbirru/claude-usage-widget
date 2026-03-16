@@ -37,11 +37,25 @@ function getSecureWebPrefs(): Electron.WebPreferences {
 }
 
 function isPostLoginUrl(url: string): boolean {
-  return (
-    url.includes("claude.ai/chats") ||
-    url.includes("claude.ai/new") ||
-    url.includes("claude.ai/chat/")
-  );
+  if (!url.startsWith("https://claude.ai/")) return false;
+  // Exclude Google OAuth pages
+  if (url.includes("accounts.google.com")) return false;
+  // Exclude the initial login page
+  if (
+    url === "https://claude.ai/login" ||
+    url.startsWith("https://claude.ai/login?")
+  )
+    return false;
+  // Exclude the auth SIGN-IN pages, but NOT /auth/callback (which is a successful OAuth return)
+  if (
+    url.startsWith("https://claude.ai/auth/signin") ||
+    url.startsWith("https://claude.ai/auth/login") ||
+    url === "https://claude.ai/auth" ||
+    url.startsWith("https://claude.ai/auth?")
+  )
+    return false;
+  // /auth/callback, /new, /chats, etc. all indicate successful login
+  return true;
 }
 
 export interface LoginResult {
@@ -64,7 +78,9 @@ export interface LoginResult {
  * Resolves { success: true, cookie } on login, { success: false, cookie: null }
  * if the user closes the window without logging in.
  */
-export async function openLoginWindow(): Promise<LoginResult> {
+export async function openLoginWindow(
+  onWindowOpen?: () => void,
+): Promise<LoginResult> {
   return new Promise((resolve) => {
     const loginWindow = new BrowserWindow({
       width: 800,
@@ -78,6 +94,15 @@ export async function openLoginWindow(): Promise<LoginResult> {
     loginWindow.webContents.setUserAgent(CHROME_UA);
 
     let resolved = false;
+    // Holds a reference so we can remove the listener on cleanup
+    let cookieChangedHandler:
+      | ((
+          event: Electron.Event,
+          cookie: Electron.Cookie,
+          cause: string,
+          removed: boolean,
+        ) => void)
+      | null = null;
 
     // -----------------------------------------------------------------------
     // Google OAuth popup handling
@@ -85,7 +110,6 @@ export async function openLoginWindow(): Promise<LoginResult> {
     // We use action:"allow" so Electron maintains window.opener — Google's
     // OAuth flow uses window.opener.postMessage() to return the auth token
     // to Claude.ai. Without a real opener the handshake silently fails.
-    // We listen on did-create-window to apply our UA and track the popup.
     // -----------------------------------------------------------------------
     loginWindow.webContents.setWindowOpenHandler(() => {
       return {
@@ -107,33 +131,26 @@ export async function openLoginWindow(): Promise<LoginResult> {
     loginWindow.webContents.on("did-create-window", (popup) => {
       if (isDev) console.log("[LoginWindow] OAuth popup created");
       popup.webContents.setUserAgent(CHROME_UA);
-
-      // Edge case: popup navigates to a post-login Claude URL
-      popup.webContents.on("did-navigate", (_e, popupUrl) => {
-        if (isDev) console.log("[LoginWindow] Popup navigated:", popupUrl);
-        if (isPostLoginUrl(popupUrl)) {
-          popup.close();
-          onLoginDetected(popupUrl);
-        }
-      });
     });
 
     // -----------------------------------------------------------------------
-    // Login detection
-    // After a successful login Claude redirects to /chats (or /new).
-    // At this point session.defaultSession already has the session cookie set.
+    // Primary login detection: poll for session cookie every second.
+    // Claude.ai uses client-side (SPA) navigation after OAuth — URL navigation
+    // events are unreliable. Polling the cookie is the source of truth.
     // -----------------------------------------------------------------------
-    async function onLoginDetected(url: string): Promise<void> {
+    async function onLoginDetected(): Promise<void> {
       if (resolved) return;
       resolved = true;
-
-      if (isDev) console.log("[LoginWindow] ✅ Login detected:", url);
+      clearInterval(cookiePoller);
+      if (cookieChangedHandler) {
+        session.defaultSession.cookies.off("changed", cookieChangedHandler);
+        cookieChangedHandler = null;
+      }
 
       const cookies = await session.defaultSession.cookies.get({
         url: "https://claude.ai",
       });
 
-      // Try each known cookie name in priority order
       const sessionCookie = cookies.find((c) =>
         SESSION_COOKIE_KEYS.includes(c.name),
       );
@@ -141,38 +158,117 @@ export async function openLoginWindow(): Promise<LoginResult> {
       let cookieValue: string;
       if (sessionCookie) {
         cookieValue = `${sessionCookie.name}=${sessionCookie.value}`;
-        if (isDev)
-          console.log(
-            "[LoginWindow] ✅ Session cookie captured:",
-            sessionCookie.name,
-          );
+        console.log(
+          "[LoginWindow] ✅ Session cookie captured:",
+          sessionCookie.name,
+        );
       } else {
-        // No named cookie found — electron.net will still work because it uses
-        // session.defaultSession automatically. Store a sentinel so we know
-        // the user is logged in without a named cookie.
+        // No named cookie — electron.net uses session.defaultSession automatically.
         cookieValue = "__electron_session__";
-        if (isDev)
-          console.log(
-            "[LoginWindow] ⚠️ No named cookie matched. " +
-              "Using electron session sentinel — electron.net will still authenticate.",
-          );
+        console.log(
+          "[LoginWindow] ⚠️ No named cookie found. All cookies:",
+          cookies.map((c) => c.name).join(", ") || "(none)",
+          "— using session sentinel",
+        );
       }
 
-      saveSession(cookieValue);
+      try {
+        saveSession(cookieValue);
+      } catch (err) {
+        console.error("[LoginWindow] Failed to save session:", err);
+      }
       loginWindow.close();
       resolve({ success: true, cookie: cookieValue });
     }
 
+    // Real-time cookie change listener — fires the moment Claude.ai sets a cookie,
+    // instead of waiting for the next 1-second poll tick.
+    cookieChangedHandler = (
+      _event: Electron.Event,
+      cookie: Electron.Cookie,
+      _cause: string,
+      removed: boolean,
+    ) => {
+      if (resolved || removed) return;
+      if (!cookie.domain?.includes("claude.ai")) return;
+      const isSessionCookie =
+        SESSION_COOKIE_KEYS.includes(cookie.name) ||
+        cookie.name.toLowerCase().includes("session") ||
+        cookie.name.startsWith("CH_") ||
+        cookie.name.startsWith("__Secure-");
+      if (isSessionCookie) {
+        console.log(
+          "[LoginWindow] ✅ Session cookie set (realtime):",
+          cookie.name,
+        );
+        onLoginDetected();
+      }
+    };
+    session.defaultSession.cookies.on("changed", cookieChangedHandler);
+
+    // Poll every second — dual check: URL + cookies.
+    // Logs always write (not gated on isDev) so main.log captures them for debugging.
+    const cookiePoller = setInterval(async () => {
+      if (resolved || loginWindow.isDestroyed()) {
+        clearInterval(cookiePoller);
+        return;
+      }
+      try {
+        // Check 1: current URL via getURL() — always reflects SPA navigation
+        const currentUrl = loginWindow.webContents.getURL();
+        console.log("[LoginWindow] Poll URL:", currentUrl);
+
+        if (isPostLoginUrl(currentUrl)) {
+          console.log("[LoginWindow] ✅ Post-login URL detected:", currentUrl);
+          onLoginDetected();
+          return;
+        }
+
+        // Check 2: ALL cookies on claude.ai — log every name so we know what's there
+        const cookies = await session.defaultSession.cookies.get({
+          url: "https://claude.ai",
+        });
+        console.log(
+          "[LoginWindow] claude.ai cookies:",
+          cookies.length === 0
+            ? "(none)"
+            : cookies.map((c) => c.name).join(", "),
+        );
+
+        // Match known keys, anything with "session" in name, CH_ prefix, or sessionKey
+        const found = cookies.find(
+          (c) =>
+            SESSION_COOKIE_KEYS.includes(c.name) ||
+            c.name.toLowerCase().includes("session") ||
+            c.name.startsWith("CH_") ||
+            c.name.startsWith("__Secure-"),
+        );
+        if (found) {
+          console.log("[LoginWindow] ✅ Session cookie found:", found.name);
+          onLoginDetected();
+        }
+      } catch (err) {
+        console.error("[LoginWindow] Poll error:", err);
+      }
+    }, 1000);
+
+    // Fallback: navigation events (non-SPA redirects)
     loginWindow.webContents.on("did-navigate", (_e, url) => {
-      if (isDev) console.log("[LoginWindow] Navigated:", url);
-      if (isPostLoginUrl(url)) onLoginDetected(url);
+      console.log("[LoginWindow] did-navigate:", url);
+      if (isPostLoginUrl(url)) onLoginDetected();
     });
 
     loginWindow.webContents.on("did-navigate-in-page", (_e, url) => {
-      if (isPostLoginUrl(url)) onLoginDetected(url);
+      console.log("[LoginWindow] did-navigate-in-page:", url);
+      if (isPostLoginUrl(url)) onLoginDetected();
     });
 
     loginWindow.on("closed", () => {
+      clearInterval(cookiePoller);
+      if (cookieChangedHandler) {
+        session.defaultSession.cookies.off("changed", cookieChangedHandler);
+        cookieChangedHandler = null;
+      }
       if (!resolved) {
         resolved = true;
         if (isDev)
@@ -182,6 +278,8 @@ export async function openLoginWindow(): Promise<LoginResult> {
     });
 
     loginWindow.loadURL("https://claude.ai/login");
+    loginWindow.focus();
+    onWindowOpen?.();
     if (isDev)
       console.log("[LoginWindow] Opened embedded browser for Claude.ai login");
   });

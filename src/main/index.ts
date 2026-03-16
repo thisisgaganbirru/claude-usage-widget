@@ -206,8 +206,8 @@ const createWindow = () => {
   // Prevent Windows Aero Snap from moving/maximizing the widget
   newWindow.on("maximize", () => newWindow.unmaximize());
 
-  // Open dev tools in development for debugging
-  // newWindow.webContents.openDevTools({ mode: "detach" });
+  // Open dev tools in development only
+  if (isDev) newWindow.webContents.openDevTools({ mode: "detach" });
 
   return newWindow;
 };

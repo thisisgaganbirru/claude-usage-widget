@@ -17,12 +17,17 @@ const GRADIENT_HOVER = "linear-gradient(135deg, #d06a44 0%, #C15F3C 100%)";
 export function LoginView(): React.ReactElement {
   const { setAuthenticated } = useAuthStore();
   const [isLoading, setIsLoading] = useState(false);
+  const [windowOpened, setWindowOpened] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // ── Logic — kept exactly as original ────────────────────────────────────────
   const handleLogin = async (): Promise<void> => {
     setIsLoading(true);
+    setWindowOpened(false);
     setError(null);
+
+    const onWindowOpened = () => setWindowOpened(true);
+    window.electron?.ipcRenderer?.on("auth:login-window-opened", onWindowOpened);
 
     try {
       // Check if window.electron is available
@@ -37,7 +42,7 @@ export function LoginView(): React.ReactElement {
       if (result.success && result.isAuthenticated) {
         setAuthenticated(true);
       } else {
-        setError("Login failed. Please try again.");
+        setError("Login cancelled. Please try again.");
       }
     } catch (err) {
       const errorMessage =
@@ -46,6 +51,8 @@ export function LoginView(): React.ReactElement {
       setError(errorMessage);
     } finally {
       setIsLoading(false);
+      setWindowOpened(false);
+      window.electron?.ipcRenderer?.removeListener("auth:login-window-opened", onWindowOpened);
     }
   };
 
@@ -385,7 +392,7 @@ export function LoginView(): React.ReactElement {
                     flexShrink: 0,
                   }}
                 />
-                Logging in…
+                {windowOpened ? "Complete login in the opened window…" : "Opening login window…"}
               </span>
             ) : (
               "Login with Claude"

@@ -54,10 +54,27 @@ function getEncryptionKey(): string {
 
 function getStore(): Store<SessionStore> {
   if (!_store) {
-    _store = new Store<SessionStore>({
-      name: "auth-session",
-      encryptionKey: getEncryptionKey(),
-    });
+    try {
+      _store = new Store<SessionStore>({
+        name: "auth-session",
+        encryptionKey: getEncryptionKey(),
+      });
+      // Verify we can actually read it — throws if encrypted with wrong key
+      _store.get("sessionCookie");
+    } catch (err) {
+      // Store is corrupted or was encrypted with a different key (e.g. after reinstall).
+      // Wipe it and start fresh — user will need to log in again.
+      console.warn("[SessionManager] Auth store corrupted, wiping:", err);
+      try {
+        // Create a plain (unencrypted) store with same name just to clear the file
+        const wiper = new Store({ name: "auth-session" });
+        wiper.clear();
+      } catch {}
+      _store = new Store<SessionStore>({
+        name: "auth-session",
+        encryptionKey: getEncryptionKey(),
+      });
+    }
   }
   return _store;
 }

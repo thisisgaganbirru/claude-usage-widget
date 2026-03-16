@@ -3,12 +3,11 @@ import isDev from "electron-is-dev";
 import { UsagePoller } from "@main/data/usage-poller";
 import { openLoginWindow } from "@main/auth/login-window";
 import {
-  getSession,
   clearSession,
   clearSessionCookies,
   isLoggedIn,
 } from "@main/auth/session-manager";
-import { fetchUsageData, clearOrgIdCache } from "@main/data/usage-fetcher";
+import { clearOrgIdCache } from "@main/data/usage-fetcher";
 import { SettingsManager } from "@main/settings/settings-manager";
 import {
   resetBrowserPreference,
@@ -31,7 +30,23 @@ export function registerIPCHandlers(
    */
   ipcMain.handle("auth:login", async () => {
     if (isDev) console.log("[IPC] auth:login requested");
-    const result = await openLoginWindow();
+
+    // Lower always-on-top so the login window can appear above the widget.
+    // The main window uses "screen-saver" level which buries any new window.
+    const wasPinned = mainWindow.isAlwaysOnTop();
+    if (wasPinned) mainWindow.setAlwaysOnTop(false);
+
+    const result = await openLoginWindow(() => {
+      mainWindow.webContents.send("auth:login-window-opened");
+    });
+
+    // Restore always-on-top after login window closes
+    if (wasPinned) {
+      mainWindow.setAlwaysOnTop(true, "screen-saver");
+      mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+      mainWindow.moveTop();
+    }
+
     if (!result.success) return { success: false, isAuthenticated: false };
 
     // Login succeeded — session cookie captured and saved by loginWindow.
@@ -58,31 +73,9 @@ export function registerIPCHandlers(
   ipcMain.handle("auth:checkSession", async () => {
     if (isDev) console.log("[IPC] auth:checkSession requested");
     const hasSession = isLoggedIn();
-    let isAuthenticated = false;
-
-    if (hasSession) {
-      try {
-        const cookie = getSession();
-        if (cookie) await fetchUsageData(cookie);
-        isAuthenticated = true;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (
-          msg.includes("401") ||
-          msg.includes("403") ||
-          msg.includes("Authentication failed")
-        ) {
-          clearSession();
-        } else {
-          // Parse error only — session is still valid
-          isAuthenticated = true;
-          console.warn(
-            "[IPC] auth:checkSession — usage parse failed (non-auth):",
-            msg,
-          );
-        }
-      }
-    }
+    // Trust the stored session — no live API call needed here.
+    // The poller validates on its first poll and emits auth:expired on 401/403.
+    const isAuthenticated = hasSession;
 
     if (isAuthenticated && usagePoller && !usagePoller.isActive()) {
       usagePoller.start();
