@@ -23,9 +23,6 @@
     "email": "gagansai9090@gmail.com"
   },
   "license": "MIT",
-  "engines": {
-    "node": ">=22.0.0"
-  },
   "devDependencies": {
     "@electron-forge/cli": "^7.11.1",
     "@electron-forge/maker-deb": "^7.11.1",
