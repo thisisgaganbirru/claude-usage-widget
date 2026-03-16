@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 
 function formatLastUpdated(ts: Date | null): string {
   if (!ts) return "Never";
@@ -25,6 +25,13 @@ export function Footer({
   padding = "8px 14px 12px",
   labelGap = 4,
 }: FooterProps): React.ReactElement {
+  const [version, setVersion] = useState("...");
+  useEffect(() => {
+    (window as any).electron?.ipcRenderer
+      ?.invoke("app:getVersion")
+      .then((r: any) => { if (r?.version) setVersion(r.version); })
+      .catch(() => {});
+  }, []);
   const refreshBtn = (
     <span
       onClick={onRefresh}
@@ -95,7 +102,7 @@ export function Footer({
           Last updated: {formatLastUpdated(lastUpdated)} {refreshBtn}
         </span>
         <span style={{ fontSize: 10, color: "rgba(255,255,255,0.15)" }}>
-          v1.0
+          v{version}
         </span>
       </div>
     </div>
