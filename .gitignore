@@ -9,7 +9,7 @@ out/
 .claude.md
 CLAUDE.md
 .claude/
-.github/
+.github/agents/
 
 # Logs
 *.log
