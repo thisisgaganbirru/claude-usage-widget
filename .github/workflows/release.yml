@@ -15,13 +15,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Ensure tag commit is on main
+        shell: pwsh
+        run: |
+          git fetch origin main --depth=1
+          $contains = git branch -r --contains $env:GITHUB_SHA
+          if ($contains -notmatch "origin/main") {
+            Write-Error "Tagged commit is not on origin/main. Release is blocked."
+            exit 1
+          }
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
+          cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build and package
         run: npm run make
