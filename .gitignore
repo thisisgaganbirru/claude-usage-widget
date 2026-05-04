@@ -22,3 +22,6 @@ Thumbs.db
 # Env
 .env
 .env.local
+
+# Local docs/context files (not for repo commits)
+docs/
