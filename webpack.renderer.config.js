@@ -2,7 +2,9 @@ const path = require("path");
 const { commonRules } = require("./webpack.rules");
 
 module.exports = {
-  target: "electron-renderer",
+  // Renderer runs with nodeIntegration: false, so bundle for web context
+  // to avoid runtime `require` references in the browser environment.
+  target: "web",
   module: {
     rules: commonRules,
   },
