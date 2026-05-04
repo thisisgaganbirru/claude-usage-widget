@@ -1,10 +1,79 @@
 import { net, session } from "electron";
 import isDev from "electron-is-dev";
 import { UsageData } from "@shared/types";
+import {
+  toUsageFetchError,
+  UsageFetchError,
+  UsageFetchErrorType,
+} from "./usage-fetcher-errors";
 
 /** Cached org ID and name — fetched once per session */
 let cachedOrgId: string | null = null;
 let cachedOrgName: string | null = null;
+
+function createTypedError(
+  type: UsageFetchErrorType,
+  message: string,
+  cause?: unknown,
+  statusCode?: number,
+  context?: string,
+): UsageFetchError {
+  return new UsageFetchError(type, message, { cause, statusCode, context });
+}
+
+function parseJson(data: string, context: string): unknown {
+  try {
+    return JSON.parse(data);
+  } catch (error) {
+    throw createTypedError(
+      "parse",
+      `Failed to parse ${context} response JSON`,
+      error,
+      undefined,
+      context,
+    );
+  }
+}
+
+function parseOrganizationsResponse(data: string): {
+  uuid: string;
+  name: string | null;
+} {
+  const json = parseJson(data, "/api/organizations");
+  const orgs = Array.isArray(json) ? json : [json];
+  const org = orgs[0];
+
+  if (!org || typeof org !== "object" || Array.isArray(org)) {
+    throw createTypedError(
+      "parse",
+      "No organization found in /api/organizations response",
+      undefined,
+      undefined,
+      "/api/organizations",
+    );
+  }
+
+  const record = org as Record<string, unknown>;
+  if (typeof record.uuid !== "string" || record.uuid.length === 0) {
+    throw createTypedError(
+      "parse",
+      "No organization found in /api/organizations response",
+      undefined,
+      undefined,
+      "/api/organizations",
+    );
+  }
+
+  const cleanedName =
+    (typeof record.name === "string" ? record.name : "")
+      .replace(/'s Organization$/i, "")
+      .trim() || null;
+
+  return {
+    uuid: record.uuid,
+    name: cleanedName,
+  };
+}
 
 export function getCachedOrgName(): string {
   return cachedOrgName ?? "Claude User";
@@ -37,7 +106,15 @@ function netGet(url: string, headers: Record<string, string>): Promise<string> {
     let data = "";
     request.on("response", (response) => {
       if (response.statusCode === 401 || response.statusCode === 403) {
-        reject(new Error(`Authentication failed: ${response.statusCode}`));
+        reject(
+          createTypedError(
+            "auth",
+            `Authentication failed: ${response.statusCode}`,
+            undefined,
+            response.statusCode,
+            url,
+          ),
+        );
         return;
       }
       response.on("data", (chunk) => {
@@ -45,13 +122,31 @@ function netGet(url: string, headers: Record<string, string>): Promise<string> {
       });
       response.on("end", () => {
         if (response.statusCode !== 200) {
-          reject(new Error(`Unexpected HTTP ${response.statusCode}`));
+          reject(
+            createTypedError(
+              "network",
+              `Unexpected HTTP ${response.statusCode}`,
+              undefined,
+              response.statusCode,
+              url,
+            ),
+          );
           return;
         }
         resolve(data);
       });
     });
-    request.on("error", reject);
+    request.on("error", (error) => {
+      reject(
+        createTypedError(
+          "network",
+          `Network request failed for ${url}`,
+          error,
+          undefined,
+          url,
+        ),
+      );
+    });
     request.end();
   });
 }
@@ -70,17 +165,9 @@ async function getOrgId(sessionCookie: string): Promise<string> {
     makeApiHeaders(sessionCookie),
   );
 
-  const json = JSON.parse(data);
-  // Response is an array of org objects; pick the first active one
-  const orgs = Array.isArray(json) ? json : [json];
-  const org = orgs[0];
-  if (!org || !org.uuid) {
-    throw new Error("No organization found in /api/organizations response");
-  }
-  cachedOrgId = org.uuid as string;
-  cachedOrgName =
-    ((org.name as string) ?? "").replace(/'s Organization$/i, "").trim() ||
-    null;
+  const org = parseOrganizationsResponse(data);
+  cachedOrgId = org.uuid;
+  cachedOrgName = org.name;
   if (isDev)
     console.log(
       `[UsageFetcher] Org ID: ${cachedOrgId}, Name: ${cachedOrgName}`,
@@ -111,12 +198,20 @@ export async function fetchUsageDataFromAPI(
   const url = `https://claude.ai/api/organizations/${orgId}/usage`;
   if (isDev) console.log(`[UsageFetcher] Fetching usage from ${url}`);
 
-  const data = await netGet(url, makeApiHeaders(sessionCookie));
-  if (isDev)
-    console.log(`[UsageFetcher] Usage response length: ${data.length}`);
+  try {
+    const data = await netGet(url, makeApiHeaders(sessionCookie));
+    if (isDev)
+      console.log(`[UsageFetcher] Usage response length: ${data.length}`);
 
-  const usageData = parseAPIResponse(data);
-  return usageData;
+    const usageData = parseAPIResponse(data);
+    return usageData;
+  } catch (error) {
+    throw toUsageFetchError(
+      error,
+      "network",
+      "Failed to fetch usage data from Claude API",
+    );
+  }
 }
 
 /**
@@ -142,9 +237,14 @@ export async function fetchUsageData(
     if (isDev) console.log("[UsageFetcher] API fetch successful");
     return data;
   } catch (apiError) {
+    const typedApiError = toUsageFetchError(
+      apiError,
+      "network",
+      "API fetch failed",
+    );
     console.warn(
       "[UsageFetcher] API fetch failed, attempting scraping fallback...",
-      apiError,
+      typedApiError,
     );
 
     try {
@@ -152,11 +252,25 @@ export async function fetchUsageData(
       if (isDev) console.log("[UsageFetcher] Scraping fallback successful");
       return data;
     } catch (scrapingError) {
+      const typedScrapingError = toUsageFetchError(
+        scrapingError,
+        "parse",
+        "Scraping fallback failed",
+      );
       console.error(
         "[UsageFetcher] All data retrieval methods failed",
-        scrapingError,
+        typedScrapingError,
       );
-      throw new Error("Failed to fetch usage data from all sources");
+
+      const finalType =
+        typedApiError.type === "auth" ? "auth" : typedApiError.type;
+      throw createTypedError(
+        finalType,
+        `Failed to fetch usage data from all sources (${finalType}): ${typedApiError.message}`,
+        { apiError: typedApiError, scrapingError: typedScrapingError },
+        typedApiError.statusCode,
+        typedApiError.context,
+      );
     }
   }
 }
@@ -201,7 +315,8 @@ function parseAPIResponse(data: string): UsageData {
     if (htmlResult) return htmlResult;
   }
 
-  throw new Error(
+  throw createTypedError(
+    "parse",
     "Unrecognized API response format — cannot parse usage data. Please ensure you are logged in.",
   );
 }
@@ -223,16 +338,16 @@ function extractFromUsageEndpoint(json: unknown): UsageData | null {
   if (!json || typeof json !== "object" || Array.isArray(json)) return null;
   const obj = json as Record<string, unknown>;
 
-  const fiveHour = obj.five_hour as Record<string, unknown> | null;
-  const sevenDay = obj.seven_day as Record<string, unknown> | null;
+  const fiveHour = parseUsageWindow(obj.five_hour);
+  const sevenDay = parseUsageWindow(obj.seven_day);
 
   if (!fiveHour && !sevenDay) return null;
 
-  const fiveHourUtil = getNum(fiveHour ?? {}, "utilization") ?? 0;
-  const fiveHourReset = (fiveHour?.resets_at as string) ?? null;
+  const fiveHourUtil = fiveHour?.utilization ?? 0;
+  const fiveHourReset = fiveHour?.resetsAt ?? null;
 
-  const sevenDayUtil = getNum(sevenDay ?? {}, "utilization") ?? 0;
-  const sevenDayReset = (sevenDay?.resets_at as string) ?? null;
+  const sevenDayUtil = sevenDay?.utilization ?? 0;
+  const sevenDayReset = sevenDay?.resetsAt ?? null;
 
   const opusUtil =
     getNum(
@@ -252,10 +367,9 @@ function extractFromUsageEndpoint(json: unknown): UsageData | null {
   const extra = obj.extra_usage as Record<string, unknown> | null;
   const planType = extra?.is_enabled === true ? "Pro+" : "Pro";
 
-  const resetTime = fiveHourReset ? new Date(fiveHourReset) : null;
-  const sevenDayResetTime = sevenDayReset
-    ? new Date(sevenDayReset)
-    : getDefaultResetTime();
+  const resetTime = parseDateOrNull(fiveHourReset);
+  const sevenDayResetTime =
+    parseDateOrNull(sevenDayReset) ?? getDefaultResetTime();
 
   return {
     currentUsage: fiveHourUtil,
@@ -343,6 +457,30 @@ function getNum(obj: Record<string, unknown>, key: string): number | null {
   if (typeof v === "number") return v;
   if (typeof v === "string" && !isNaN(Number(v))) return Number(v);
   return null;
+}
+
+function parseUsageWindow(
+  value: unknown,
+): { utilization: number; resetsAt: string | null } | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+
+  if ("utilization" in record) {
+    const utilization = getNum(record, "utilization");
+    if (utilization === null) return null;
+
+    const resetsAtRaw = record.resets_at;
+    const resetsAt = typeof resetsAtRaw === "string" ? resetsAtRaw : null;
+    return { utilization, resetsAt };
+  }
+
+  return { utilization: 0, resetsAt: null };
+}
+
+function parseDateOrNull(value: string | null): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 /**
