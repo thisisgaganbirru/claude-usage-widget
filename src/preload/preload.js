@@ -3,66 +3,115 @@ const { contextBridge, ipcRenderer } = require("electron");
 console.log("[Preload] Starting preload script initialization...");
 
 const listenerMap = new Map();
+const IPC_INTERNAL_CHANNELS = {
+  GET_CHANNELS: "ipc:getChannels",
+};
 
 /**
  * Secure IPC bridge between renderer and main process
  * Only allow whitelisted channels
  */
 
-const ALLOWED_CHANNELS_INVOKE = [
-  // Auth channels
-  "auth:login",
-  "auth:logout",
-  "auth:checkSession",
-  // Usage channels
-  "usage:getCurrent",
-  // Poller channels
-  "poller:start",
-  "poller:stop",
-  "poller:setInterval",
-  // Settings channels
-  "settings:get",
-  "settings:update",
-  // App channels
-  "app:getVersion",
-  "app:quit",
-  "app:minimize",
-  "app:openExternal",
-  // Browser preference channels
-  "browser:resetPreference",
-  "browser:getPreference",
-  // Window channels
-  "resize-window",
-  "move-window",
-  "get-window-position",
-  "window:getPinned",
-  "window:setPinned",
-  // Transparent hit-test passthrough
-  "set-ignore-mouse-events",
-  // Context menu
-  "menu:showContextMenu",
-];
+const FALLBACK_ALLOWED_CHANNELS = {
+  invoke: [
+    // Auth channels
+    "auth:login",
+    "auth:logout",
+    "auth:checkSession",
+    // Usage channels
+    "usage:getCurrent",
+    // Poller channels
+    "poller:start",
+    "poller:stop",
+    "poller:setInterval",
+    // Settings channels
+    "settings:get",
+    "settings:update",
+    // App channels
+    "app:getVersion",
+    "app:quit",
+    "app:minimize",
+    "app:openExternal",
+    // Browser preference channels
+    "browser:resetPreference",
+    "browser:getPreference",
+    // Window channels
+    "resize-window",
+    "move-window",
+    "get-window-position",
+    "window:getPinned",
+    "window:setPinned",
+    // Transparent hit-test passthrough
+    "set-ignore-mouse-events",
+    // Context menu
+    "menu:showContextMenu",
+  ],
+  send: ["move-window-fire", "set-ignore-mouse-events"],
+  on: [
+    // Usage updates
+    "usage:updated",
+    // Notifications
+    "notification:threshold",
+    // Auth events
+    "auth:expired",
+    "auth:login-success",
+    "auth:login-window-opened",
+    // Poller events
+    "poller:error",
+    // Action events
+    "action:refreshNow",
+    "action:openSettings",
+    // Menu events
+    "menu:sizeChange",
+    "menu:logout",
+  ],
+};
 
-const ALLOWED_CHANNELS_SEND = ["move-window-fire", "set-ignore-mouse-events"];
+let resolvedAllowedChannels = null;
+let isChannelFetchInFlight = false;
 
-const ALLOWED_CHANNELS_ON = [
-  // Usage updates
-  "usage:updated",
-  // Notifications
-  "notification:threshold",
-  // Auth events
-  "auth:expired",
-  "auth:login-success",
-  "auth:login-window-opened",
-  // Poller events
-  "poller:error",
-  // Action events
-  "action:refreshNow",
-  "action:openSettings",
-  // Menu events
-  "menu:sizeChange",
-  "menu:logout",
-];
+function isStringArray(value) {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function normalizeAllowedChannels(value) {
+  if (!value || typeof value !== "object") return null;
+  const { invoke, send, on } = value;
+  if (!isStringArray(invoke) || !isStringArray(send) || !isStringArray(on)) {
+    return null;
+  }
+  return { invoke, send, on };
+}
+
+function getAllowedChannels(kind) {
+  requestAllowedChannelsFromMain();
+  return resolvedAllowedChannels?.[kind] ?? FALLBACK_ALLOWED_CHANNELS[kind];
+}
+
+function requestAllowedChannelsFromMain() {
+  if (resolvedAllowedChannels || isChannelFetchInFlight) return;
+
+  isChannelFetchInFlight = true;
+  ipcRenderer
+    .invoke(IPC_INTERNAL_CHANNELS.GET_CHANNELS)
+    .then((channelSets) => {
+      const normalized = normalizeAllowedChannels(channelSets);
+      if (normalized) {
+        resolvedAllowedChannels = normalized;
+      }
+    })
+    .catch((error) => {
+      console.warn(
+        "[Preload] Falling back to static IPC channel allowlists:",
+        error?.message ?? error,
+      );
+    })
+    .finally(() => {
+      isChannelFetchInFlight = false;
+    });
+}
+
+requestAllowedChannelsFromMain();
 
 function getWrappedListener(channel, listener) {
   let channelListeners = listenerMap.get(channel);
@@ -92,7 +141,7 @@ contextBridge.exposeInMainWorld("electron", {
      * Invoke (request-response) pattern
      */
     invoke: (channel, ...args) => {
-      if (!ALLOWED_CHANNELS_INVOKE.includes(channel)) {
+      if (!getAllowedChannels("invoke").includes(channel)) {
         console.error(`[Preload] Blocked invoke on channel: ${channel}`);
         return Promise.reject(new Error(`Channel ${channel} is not allowed`));
       }
@@ -103,7 +152,7 @@ contextBridge.exposeInMainWorld("electron", {
      * On (listener) pattern
      */
     on: (channel, listener) => {
-      if (!ALLOWED_CHANNELS_ON.includes(channel)) {
+      if (!getAllowedChannels("on").includes(channel)) {
         console.error(`[Preload] Blocked listener on channel: ${channel}`);
         return;
       }
@@ -114,7 +163,7 @@ contextBridge.exposeInMainWorld("electron", {
      * Once (single listener) pattern
      */
     once: (channel, listener) => {
-      if (!ALLOWED_CHANNELS_ON.includes(channel)) {
+      if (!getAllowedChannels("on").includes(channel)) {
         console.error(`[Preload] Blocked once listener on channel: ${channel}`);
         return;
       }
@@ -144,7 +193,7 @@ contextBridge.exposeInMainWorld("electron", {
      * Send (fire-and-forget) pattern — for high-frequency events like drag
      */
     send: (channel, ...args) => {
-      if (!ALLOWED_CHANNELS_SEND.includes(channel)) {
+      if (!getAllowedChannels("send").includes(channel)) {
         console.error(`[Preload] Blocked send on channel: ${channel}`);
         return;
       }

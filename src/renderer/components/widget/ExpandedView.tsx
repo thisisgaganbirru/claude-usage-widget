@@ -3,8 +3,6 @@ import { useUsageData } from "@renderer/hooks/useUsageData";
 import { WidgetHeader, SizeOption } from "./WidgetHeader";
 import { Footer } from "./Footer";
 
-// ─── Helper functions (unchanged) ────────────────────────────────────────────
-
 function formatCountdown(ms: number): string {
   if (ms <= 0) return "0d 00:00:00";
   const totalSeconds = Math.floor(ms / 1000);
@@ -50,39 +48,58 @@ function formatResetTime(date: Date): string {
   });
 }
 
-// ─── ProgressBar — defined outside so it has no closure over component state ─
-
-const ProgressBar = ({
+function ProgressBar({
   percent,
-  color = "#6b9eff",
+  color,
   height = 6,
 }: {
   percent: number;
-  color?: string;
+  color: string;
   height?: number;
-}) => (
-  <div
-    style={{
-      height,
-      background: "rgba(255,255,255,0.08)",
-      borderRadius: height / 2,
-      overflow: "hidden",
-      width: "100%",
-    }}
-  >
-    <div
-      style={{
-        height: "100%",
-        width: `${Math.max(percent, 1)}%`,
-        background: color,
-        borderRadius: height / 2,
-        transition: "width 0.5s ease",
-      }}
-    />
-  </div>
-);
+}): React.ReactElement {
+  const clamped = Math.max(0, Math.min(100, percent));
+  const width = clamped > 0 ? Math.max(clamped, 1) : 0;
+  return (
+    <svg
+      className="w-full"
+      height={height}
+      viewBox={`0 0 100 ${height}`}
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      <rect x="0" y="0" width="100" height={height} rx={height / 2} className="fill-white/10" />
+      <rect x="0" y="0" width={width} height={height} rx={height / 2} fill={color} />
+    </svg>
+  );
+}
 
-// ─── ExpandedView ─────────────────────────────────────────────────────────────
+function StackedBar({
+  opus,
+  sonnet,
+  haiku,
+}: {
+  opus: number;
+  sonnet: number;
+  haiku: number;
+}): React.ReactElement {
+  const o = Math.max(0, Math.min(100, opus));
+  const s = Math.max(0, Math.min(100 - o, sonnet));
+  const h = Math.max(0, Math.min(100 - o - s, haiku));
+  return (
+    <svg
+      className="w-full"
+      height={7}
+      viewBox="0 0 100 7"
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      <rect x="0" y="0" width="100" height="7" rx="3.5" className="fill-white/10" />
+      <rect x="0" y="0" width={o} height="7" rx="3.5" fill="#C15F3C" />
+      <rect x={o} y="0" width={s} height="7" fill="#6b9eff" />
+      <rect x={o + s} y="0" width={h} height="7" rx="3.5" fill="#10b981" />
+    </svg>
+  );
+}
 
 export function ExpandedView({
   selectedSize,
@@ -98,27 +115,21 @@ export function ExpandedView({
   onTogglePin?: (pinned: boolean) => void;
   onLogout?: () => void;
   onRemove?: () => void;
-}) {
+}): React.ReactElement {
   const { usageData, isLoading, lastUpdated } = useUsageData();
   const [countdown, setCountdown] = useState("0d 00:00:00");
-  const [, setTick] = useState(0);
-
-  // New UI state
   const [hoveredModel, setHoveredModel] = useState<number | null>(null);
 
-  // Tick every second to keep countdown fresh; recalculate from resetTime, never subtract
   useEffect(() => {
     const timer = setInterval(() => {
       if (usageData?.sevenDayResetTime) {
         const ms = new Date(usageData.sevenDayResetTime).getTime() - Date.now();
         setCountdown(formatCountdown(ms));
       }
-      setTick((t) => t + 1);
     }, 1000);
     return () => clearInterval(timer);
   }, [usageData?.sevenDayResetTime]);
 
-  // Seed countdown immediately when data arrives
   useEffect(() => {
     if (usageData?.sevenDayResetTime) {
       const ms = new Date(usageData.sevenDayResetTime).getTime() - Date.now();
@@ -126,34 +137,14 @@ export function ExpandedView({
     }
   }, [usageData?.sevenDayResetTime]);
 
-  // ── Loading / null guard ───────────────────────────────────────────────────
   if (isLoading || !usageData) {
     return (
-      <div
-        style={{
-          background: "transparent",
-          height: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <div
-          style={{
-            width: 28,
-            height: 28,
-            border: "3px solid rgba(255,255,255,0.1)",
-            borderTop: "3px solid #C15F3C",
-            borderRadius: "50%",
-            animation: "spin 0.8s linear infinite",
-          }}
-        />
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <div className="flex h-full items-center justify-center bg-transparent">
+        <div className="h-7 w-7 animate-spin rounded-full border-[3px] border-white/10 border-t-[#C15F3C]" />
       </div>
     );
   }
 
-  // ── Data derivations (unchanged) ──────────────────────────────────────────
   const pct = Math.round(Math.min(Math.max(usageData.sevenDayUsage, 0), 100));
   const sessionPct = Math.round(
     Math.min(Math.max(usageData.percentageUsed, 0), 100),
@@ -169,93 +160,20 @@ export function ExpandedView({
     sessionResetDate !== null &&
     sessionResetDate.getTime() - Date.now() <= 5 * 60 * 60 * 1000;
 
-  // Models array — uses derived per-model values and new design colours
   const models = [
-    { name: "Opus 4.6", used: opusPct, color: "#C15F3C" },
-    { name: "Sonnet 4.5", used: sonnetPct, color: "#6b9eff" },
-    { name: "Haiku 4.5", used: haikuPct, color: "#10b981" },
+    { name: "Opus 4.6", used: opusPct, color: "#C15F3C", dotClass: "bg-[#C15F3C]" },
+    { name: "Sonnet 4.5", used: sonnetPct, color: "#6b9eff", dotClass: "bg-[#6b9eff]" },
+    { name: "Haiku 4.5", used: haikuPct, color: "#10b981", dotClass: "bg-emerald-500" },
   ];
 
-  // ── Sub-components (defined inside to close over hoveredModel / state) ─────
-
-  /** Stacked bar — each segment dims when another segment is hovered */
-  const StackedBar = ({
-    models: m,
-    height = 6,
-  }: {
-    models: typeof models;
-    height?: number;
-  }) => {
-    let accumulated = 0;
-    return (
-      <div
-        style={{
-          position: "relative",
-          height,
-          background: "rgba(255,255,255,0.08)",
-          borderRadius: height / 2,
-          overflow: "hidden",
-          width: "100%",
-        }}
-      >
-        {m.map((model, i) => {
-          const w = model.used;
-          const left = accumulated;
-          accumulated += model.used;
-          return (
-            <div
-              key={i}
-              onMouseEnter={() => setHoveredModel(i)}
-              onMouseLeave={() => setHoveredModel(null)}
-              style={{
-                position: "absolute",
-                left: `${left}%`,
-                width: `${w}%`,
-                height: "100%",
-                background: model.color,
-                // Dim non-hovered segments for focus effect
-                opacity: hoveredModel !== null && hoveredModel !== i ? 0.4 : 1,
-                transition: "opacity 0.2s ease",
-                borderRight:
-                  i < m.length - 1 && w > 0
-                    ? "1px solid rgba(0,0,0,0.3)"
-                    : "none",
-                cursor: "pointer",
-              }}
-            />
-          );
-        })}
-      </div>
-    );
-  };
-
-  // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div
-      style={{
-        background: "transparent",
-        height: "auto",
-        overflowY: "visible",
-        fontFamily:
-          "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
-      }}
-    >
-      {/* Relative wrapper lets the absolute context menu position against it */}
-      <div style={{ position: "relative" }}>
+    <div className="h-auto overflow-y-visible bg-transparent">
+      <div className="relative">
         <div
           data-widget-card
-          style={{
-            background: "rgba(24, 24, 27, 0.97)",
-            backdropFilter: "blur(24px)",
-            borderRadius: 18,
-            border: "1px solid rgba(255,255,255,0.06)",
-            boxShadow:
-              "0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04)",
-            overflow: "visible",
-          }}
+          className="overflow-visible rounded-[18px] border border-white/10 bg-[rgba(24,24,27,0.97)] shadow-[0_8px_32px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl"
         >
-          {/* ── Header ──────────────────────────────────────────────────────── */}
-          <div style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+          <div className="border-b border-white/5">
             <WidgetHeader
               planType={usageData.planType}
               userName={usageData.userName}
@@ -268,38 +186,17 @@ export function ExpandedView({
             />
           </div>
 
-          {/* ── Body ────────────────────────────────────────────────────────── */}
-          <div style={{ padding: "16px 18px" }}>
-            {/* Current Session */}
-            <div style={{ marginBottom: 18 }}>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "baseline",
-                  marginBottom: 4,
-                }}
-              >
-                <span style={{ fontSize: 13, color: "#fff", fontWeight: 600 }}>
+          <div className="px-[18px] pb-4 pt-4">
+            <div className="mb-[18px]">
+              <div className="mb-1 flex items-baseline justify-between">
+                <span className="text-[13px] font-semibold text-white">
                   Current session
                 </span>
-                <span
-                  style={{
-                    fontSize: 12,
-                    color: "rgba(255,255,255,0.5)",
-                    fontWeight: 500,
-                  }}
-                >
+                <span className="text-xs font-medium text-white/50">
                   {sessionPct}% used
                 </span>
               </div>
-              <div
-                style={{
-                  fontSize: 11,
-                  color: "rgba(255,255,255,0.3)",
-                  marginBottom: 8,
-                }}
-              >
+              <div className="mb-2 text-[11px] text-white/30">
                 {!sessionActive
                   ? "Starts when a message is sent"
                   : `Resets in ${formatSessionReset(sessionResetDate!)}`}
@@ -307,254 +204,88 @@ export function ExpandedView({
               <ProgressBar percent={sessionPct} color="#6b9eff" height={6} />
             </div>
 
-            {/* Full-width divider */}
-            <div
-              style={{
-                height: 1,
-                background: "rgba(255,255,255,0.06)",
-                margin: "0 -18px 16px",
-                width: "calc(100% + 36px)",
-              }}
-            />
+            <div className="-mx-[18px] mb-4 h-px bg-white/10" />
 
-            {/* Weekly Limits — header */}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "baseline",
-                marginBottom: 4,
-              }}
-            >
-              <span style={{ fontSize: 13, color: "#fff", fontWeight: 600 }}>
-                Weekly limits
-              </span>
-              <span
-                style={{
-                  fontSize: 12,
-                  color: "rgba(255,255,255,0.5)",
-                  fontWeight: 500,
-                }}
-              >
-                {pct}% used
-              </span>
+            <div className="mb-1 flex items-baseline justify-between">
+              <span className="text-[13px] font-semibold text-white">Weekly limits</span>
+              <span className="text-xs font-medium text-white/50">{pct}% used</span>
             </div>
 
-            {/* All Models stacked bar */}
-            <div style={{ marginBottom: 14 }}>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: 6,
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: 11,
-                    color: "rgba(255,255,255,0.5)",
-                    fontWeight: 600,
-                  }}
-                >
-                  All models
-                </span>
-                <span style={{ fontSize: 10, color: "rgba(255,255,255,0.3)" }}>
-                  Resets {formatResetDay(resetDate)}{" "}
-                  {formatResetTime(resetDate)}
+            <div className="mb-[14px]">
+              <div className="mb-1.5 flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-white/50">All models</span>
+                <span className="text-[10px] text-white/30">
+                  Resets {formatResetDay(resetDate)} {formatResetTime(resetDate)}
                 </span>
               </div>
-              <StackedBar models={models} height={7} />
+              <StackedBar opus={opusPct} sonnet={sonnetPct} haiku={haikuPct} />
             </div>
 
-            {/* Per-model breakdown */}
-            <div
-              style={{
-                background: "rgba(255,255,255,0.02)",
-                borderRadius: 10,
-                padding: "12px 12px 10px",
-                marginBottom: 14,
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 9,
-                  color: "rgba(255,255,255,0.3)",
-                  fontWeight: 600,
-                  letterSpacing: "0.06em",
-                  marginBottom: 10,
-                }}
-              >
+            <div className="mb-[14px] rounded-[10px] bg-white/5 px-3 py-3">
+              <div className="mb-2.5 text-[9px] font-semibold tracking-[0.06em] text-white/30">
                 PER-MODEL BREAKDOWN
               </div>
               {models.map((model, i) => (
                 <div
-                  key={i}
+                  key={model.name}
                   onMouseEnter={() => setHoveredModel(i)}
                   onMouseLeave={() => setHoveredModel(null)}
-                  style={{
-                    marginBottom: i < models.length - 1 ? 12 : 0,
-                    cursor: "pointer",
-                    // Dim rows that aren't currently hovered
-                    opacity:
-                      hoveredModel !== null && hoveredModel !== i ? 0.5 : 1,
-                    transition: "opacity 0.2s",
-                  }}
+                  className={`cursor-pointer transition-opacity ${
+                    i < models.length - 1 ? "mb-3" : ""
+                  } ${
+                    hoveredModel !== null && hoveredModel !== i
+                      ? "opacity-50"
+                      : "opacity-100"
+                  }`}
                 >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: 5,
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 7,
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: 2,
-                          background: model.color,
-                        }}
-                      />
-                      <span
-                        style={{
-                          fontSize: 11,
-                          color: "rgba(255,255,255,0.7)",
-                          fontWeight: 600,
-                        }}
-                      >
+                  <div className="mb-[5px] flex items-center justify-between">
+                    <div className="flex items-center gap-[7px]">
+                      <div className={`h-2 w-2 rounded-[2px] ${model.dotClass}`} />
+                      <span className="text-[11px] font-semibold text-white/70">
                         {model.name}
                       </span>
                     </div>
-                    <span
-                      style={{
-                        fontSize: 11,
-                        color: "rgba(255,255,255,0.4)",
-                        fontWeight: 500,
-                      }}
-                    >
+                    <span className="text-[11px] font-medium text-white/40">
                       {model.used}% used
                     </span>
                   </div>
-                  <ProgressBar
-                    percent={model.used}
-                    color={model.color}
-                    height={4}
-                  />
+                  <ProgressBar percent={model.used} color={model.color} height={4} />
                 </div>
               ))}
             </div>
 
-            {/* Weekly reset countdown */}
-            <div
-              style={{
-                background: "rgba(193, 95, 60, 0.06)",
-                border: "1px solid rgba(193, 95, 60, 0.1)",
-                borderRadius: 10,
-                padding: "10px 12px",
-                marginBottom: 12,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: 6,
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: 10,
-                    color: "rgba(255,255,255,0.35)",
-                    fontWeight: 600,
-                    letterSpacing: "0.04em",
-                  }}
-                >
+            <div className="mb-3 rounded-[10px] border border-[#C15F3C]/10 bg-[#C15F3C]/10 px-3 py-2.5">
+              <div className="mb-1.5 flex items-center justify-between">
+                <span className="text-[10px] font-semibold tracking-[0.04em] text-white/35">
                   WEEKLY RESET IN
                 </span>
-                {/* Monospace countdown so digits don't jitter */}
-                <span
-                  style={{
-                    fontSize: 16,
-                    color: "#C15F3C",
-                  }}
-                >
-                  {countdown}
-                </span>
+                <span className="text-base text-[#C15F3C]">{countdown}</span>
               </div>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                }}
-              >
-                <span style={{ fontSize: 10, color: "rgba(255,255,255,0.25)" }}>
-                  Next reset
-                </span>
-                <span
-                  style={{
-                    fontSize: 11,
-                    color: "rgba(255,255,255,0.45)",
-                    fontWeight: 500,
-                  }}
-                >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-white/25">Next reset</span>
+                <span className="text-[11px] font-medium text-white/45">
                   {formatResetDate(resetDate)}
                 </span>
               </div>
             </div>
 
-            {/* Alert thresholds */}
-            <div
-              style={{
-                background: "rgba(255,255,255,0.02)",
-                borderRadius: 10,
-                padding: "10px 12px",
-                marginBottom: 12,
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 9,
-                  color: "rgba(255,255,255,0.3)",
-                  fontWeight: 600,
-                  letterSpacing: "0.06em",
-                  marginBottom: 8,
-                }}
-              >
+            <div className="mb-3 rounded-[10px] bg-white/5 px-3 py-2.5">
+              <div className="mb-2 text-[9px] font-semibold tracking-[0.06em] text-white/30">
                 ALERT THRESHOLDS
               </div>
-              <div style={{ display: "flex", gap: 6 }}>
+              <div className="flex gap-1.5">
                 {[
                   { pct: 50, active: false },
                   { pct: 75, active: true },
                   { pct: 90, active: true },
-                ].map((t, i) => (
+                ].map((t) => (
                   <div
-                    key={i}
-                    style={{
-                      flex: 1,
-                      padding: "5px 0",
-                      borderRadius: 6,
-                      border: `1px solid ${t.active ? "rgba(193,95,60,0.25)" : "rgba(255,255,255,0.06)"}`,
-                      background: t.active
-                        ? "rgba(193,95,60,0.06)"
-                        : "transparent",
-                      textAlign: "center",
-                      fontSize: 10,
-                      color: t.active ? "#C15F3C" : "rgba(255,255,255,0.25)",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
+                    key={t.pct}
+                    className={`flex-1 rounded-md border py-[5px] text-center text-[10px] font-semibold ${
+                      t.active
+                        ? "border-[#C15F3C]/25 bg-[#C15F3C]/10 text-[#C15F3C]"
+                        : "border-white/10 text-white/25"
+                    }`}
                   >
                     {t.pct}%
                   </div>
@@ -562,8 +293,7 @@ export function ExpandedView({
               </div>
             </div>
 
-            {/* Quick actions */}
-            <div style={{ display: "flex", gap: 6 }}>
+            <div className="flex gap-1.5">
               <button
                 onClick={() =>
                   (window as any).electron?.ipcRenderer?.invoke(
@@ -571,24 +301,9 @@ export function ExpandedView({
                     "https://claude.ai",
                   )
                 }
-                style={{
-                  flex: 1,
-                  padding: "9px 0",
-                  borderRadius: 8,
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  background: "rgba(255,255,255,0.03)",
-                  color: "rgba(255,255,255,0.6)",
-                  fontSize: 11,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 5,
-                }}
+                className="flex flex-1 items-center justify-center gap-[5px] rounded-lg border border-white/10 bg-white/5 py-[9px] text-[11px] font-semibold text-white/60"
               >
-                <span style={{ fontSize: 13 }}>↗</span> Open Claude
+                <span className="text-[13px]">↗</span> Open Claude
               </button>
               <button
                 onClick={() =>
@@ -597,29 +312,13 @@ export function ExpandedView({
                     "https://claude.ai/settings/general",
                   )
                 }
-                style={{
-                  flex: 1,
-                  padding: "9px 0",
-                  borderRadius: 8,
-                  border: "1px solid rgba(193,95,60,0.2)",
-                  background: "rgba(193,95,60,0.06)",
-                  color: "#C15F3C",
-                  fontSize: 11,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 5,
-                }}
+                className="flex flex-1 items-center justify-center gap-[5px] rounded-lg border border-[#C15F3C]/20 bg-[#C15F3C]/10 py-[9px] text-[11px] font-semibold text-[#C15F3C]"
               >
-                <span style={{ fontSize: 11 }}>⚙</span> Settings
+                <span className="text-[11px]">⚙</span> Settings
               </button>
             </div>
           </div>
 
-          {/* ── Footer ──────────────────────────────────────────────────────── */}
           <Footer
             lastUpdated={lastUpdated ? new Date(lastUpdated) : null}
             label={usageData.userName}

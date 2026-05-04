@@ -58,6 +58,16 @@ function isPostLoginUrl(url: string): boolean {
   return true;
 }
 
+function isKnownSessionCookieName(name: string): boolean {
+  return SESSION_COOKIE_KEYS.includes(name);
+}
+
+function getValidSessionCookie(
+  cookies: Electron.Cookie[],
+): Electron.Cookie | undefined {
+  return cookies.find((c) => isKnownSessionCookieName(c.name));
+}
+
 export interface LoginResult {
   success: boolean;
   cookie: string | null;
@@ -94,6 +104,7 @@ export async function openLoginWindow(
     loginWindow.webContents.setUserAgent(CHROME_UA);
 
     let resolved = false;
+    let finalizing = false;
     // Holds a reference so we can remove the listener on cleanup
     let cookieChangedHandler:
       | ((
@@ -139,37 +150,33 @@ export async function openLoginWindow(
     // events are unreliable. Polling the cookie is the source of truth.
     // -----------------------------------------------------------------------
     async function onLoginDetected(): Promise<void> {
-      if (resolved) return;
-      resolved = true;
-      clearInterval(cookiePoller);
-      if (cookieChangedHandler) {
-        session.defaultSession.cookies.off("changed", cookieChangedHandler);
-        cookieChangedHandler = null;
-      }
+      if (resolved || finalizing) return;
 
       const cookies = await session.defaultSession.cookies.get({
         url: "https://claude.ai",
       });
 
-      const sessionCookie = cookies.find((c) =>
-        SESSION_COOKIE_KEYS.includes(c.name),
+      const sessionCookie = getValidSessionCookie(cookies);
+      if (!sessionCookie) {
+        console.log(
+          "[LoginWindow] Waiting for valid auth cookie. Seen:",
+          cookies.map((c) => c.name).join(", ") || "(none)",
+        );
+        return;
+      }
+
+      finalizing = true;
+      const cookieValue = `${sessionCookie.name}=${sessionCookie.value}`;
+      console.log(
+        "[LoginWindow] ✅ Session cookie captured:",
+        sessionCookie.name,
       );
 
-      let cookieValue: string;
-      if (sessionCookie) {
-        cookieValue = `${sessionCookie.name}=${sessionCookie.value}`;
-        console.log(
-          "[LoginWindow] ✅ Session cookie captured:",
-          sessionCookie.name,
-        );
-      } else {
-        // No named cookie — electron.net uses session.defaultSession automatically.
-        cookieValue = "__electron_session__";
-        console.log(
-          "[LoginWindow] ⚠️ No named cookie found. All cookies:",
-          cookies.map((c) => c.name).join(", ") || "(none)",
-          "— using session sentinel",
-        );
+      resolved = true;
+      clearInterval(cookiePoller);
+      if (cookieChangedHandler) {
+        session.defaultSession.cookies.off("changed", cookieChangedHandler);
+        cookieChangedHandler = null;
       }
 
       try {
@@ -191,11 +198,7 @@ export async function openLoginWindow(
     ) => {
       if (resolved || removed) return;
       if (!cookie.domain?.includes("claude.ai")) return;
-      const isSessionCookie =
-        SESSION_COOKIE_KEYS.includes(cookie.name) ||
-        cookie.name.toLowerCase().includes("session") ||
-        cookie.name.startsWith("CH_") ||
-        cookie.name.startsWith("__Secure-");
+      const isSessionCookie = isKnownSessionCookieName(cookie.name);
       if (isSessionCookie) {
         console.log(
           "[LoginWindow] ✅ Session cookie set (realtime):",
@@ -235,14 +238,8 @@ export async function openLoginWindow(
             : cookies.map((c) => c.name).join(", "),
         );
 
-        // Match known keys, anything with "session" in name, CH_ prefix, or sessionKey
-        const found = cookies.find(
-          (c) =>
-            SESSION_COOKIE_KEYS.includes(c.name) ||
-            c.name.toLowerCase().includes("session") ||
-            c.name.startsWith("CH_") ||
-            c.name.startsWith("__Secure-"),
-        );
+        // Match only known auth session cookie keys to avoid false positives.
+        const found = getValidSessionCookie(cookies);
         if (found) {
           console.log("[LoginWindow] ✅ Session cookie found:", found.name);
           onLoginDetected();

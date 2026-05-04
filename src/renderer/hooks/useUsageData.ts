@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useUsageStore } from "@renderer/store/usage-store";
+import { useUsageStore, UsageStoreState } from "@renderer/store/usage-store";
 import { useAuthStore } from "@renderer/store/auth-store";
 import { UsageData } from "@shared/types";
 
@@ -9,7 +9,7 @@ const isDev = process.env.NODE_ENV === "development";
  * Custom hook for listening to usage data updates from main process
  * Automatically sets up IPC listeners and handles updates
  */
-export function useUsageData() {
+export function useUsageData(): UsageStoreState {
   const { setUsageData, setLastUpdated, setError, fetchCurrent } =
     useUsageStore();
   const clearAuth = useAuthStore((state) => state.clearAuth);

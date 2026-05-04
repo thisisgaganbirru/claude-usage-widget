@@ -19,6 +19,7 @@ import isDev from "electron-is-dev";
  */
 export const SESSION_COOKIE_KEYS: string[] = [
   "sessionKey",
+  "sessionKeyV2",
   "CH_SESSION",
   "__Secure-next-auth.session-token",
   "next-auth.session-token",

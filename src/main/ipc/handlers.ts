@@ -13,6 +13,12 @@ import {
   resetBrowserPreference,
   getPreferredBrowserName,
 } from "@main/browser-preference";
+import {
+  IPC_CHANNELS,
+  IPC_INTERNAL_CHANNELS,
+  IPC_INVOKE_CHANNELS,
+  IPC_ON_CHANNELS,
+} from "@shared/ipc-channels";
 
 let usagePoller: UsagePoller | null = null;
 
@@ -25,11 +31,13 @@ export function registerIPCHandlers(
 ): void {
   usagePoller = poller;
 
+  ipcMain.handle(IPC_INTERNAL_CHANNELS.GET_CHANNELS, () => IPC_CHANNELS);
+
   /**
    * Auth: Open login window
    */
-  ipcMain.handle("auth:login", async () => {
-    if (isDev) console.log("[IPC] auth:login requested");
+  ipcMain.handle(IPC_INVOKE_CHANNELS.AUTH_LOGIN, async () => {
+    if (isDev) console.log(`[IPC] ${IPC_INVOKE_CHANNELS.AUTH_LOGIN} requested`);
 
     // Lower always-on-top so the login window can appear above the widget.
     // The main window uses "screen-saver" level which buries any new window.
@@ -37,7 +45,7 @@ export function registerIPCHandlers(
     if (wasPinned) mainWindow.setAlwaysOnTop(false);
 
     const result = await openLoginWindow(() => {
-      mainWindow.webContents.send("auth:login-window-opened");
+      mainWindow.webContents.send(IPC_ON_CHANNELS.AUTH_LOGIN_WINDOW_OPENED);
     });
 
     // Restore always-on-top after login window closes
@@ -61,8 +69,8 @@ export function registerIPCHandlers(
   /**
    * Auth: Logout
    */
-  ipcMain.handle("auth:logout", async () => {
-    if (isDev) console.log("[IPC] auth:logout requested");
+  ipcMain.handle(IPC_INVOKE_CHANNELS.AUTH_LOGOUT, async () => {
+    if (isDev) console.log(`[IPC] ${IPC_INVOKE_CHANNELS.AUTH_LOGOUT} requested`);
     clearSession();
     clearOrgIdCache();
     await clearSessionCookies();
@@ -70,8 +78,10 @@ export function registerIPCHandlers(
     return { success: true };
   });
 
-  ipcMain.handle("auth:checkSession", async () => {
-    if (isDev) console.log("[IPC] auth:checkSession requested");
+  ipcMain.handle(IPC_INVOKE_CHANNELS.AUTH_CHECK_SESSION, async () => {
+    if (isDev) {
+      console.log(`[IPC] ${IPC_INVOKE_CHANNELS.AUTH_CHECK_SESSION} requested`);
+    }
     const hasSession = isLoggedIn();
     // Trust the stored session — no live API call needed here.
     // The poller validates on its first poll and emits auth:expired on 401/403.
@@ -89,8 +99,10 @@ export function registerIPCHandlers(
   /**
    * Usage: Get current usage data
    */
-  ipcMain.handle("usage:getCurrent", () => {
-    if (isDev) console.log("[IPC] usage:getCurrent requested");
+  ipcMain.handle(IPC_INVOKE_CHANNELS.USAGE_GET_CURRENT, () => {
+    if (isDev) {
+      console.log(`[IPC] ${IPC_INVOKE_CHANNELS.USAGE_GET_CURRENT} requested`);
+    }
     const usageData = usagePoller?.getLastUsageData();
     return { usageData };
   });
@@ -98,8 +110,8 @@ export function registerIPCHandlers(
   /**
    * Poller: Start polling
    */
-  ipcMain.handle("poller:start", () => {
-    if (isDev) console.log("[IPC] poller:start requested");
+  ipcMain.handle(IPC_INVOKE_CHANNELS.POLLER_START, () => {
+    if (isDev) console.log(`[IPC] ${IPC_INVOKE_CHANNELS.POLLER_START} requested`);
     if (usagePoller && !usagePoller.isActive()) {
       usagePoller.start();
       return { success: true, isActive: true };
@@ -110,8 +122,8 @@ export function registerIPCHandlers(
   /**
    * Poller: Stop polling
    */
-  ipcMain.handle("poller:stop", () => {
-    if (isDev) console.log("[IPC] poller:stop requested");
+  ipcMain.handle(IPC_INVOKE_CHANNELS.POLLER_STOP, () => {
+    if (isDev) console.log(`[IPC] ${IPC_INVOKE_CHANNELS.POLLER_STOP} requested`);
     usagePoller?.stop();
     return { success: true, isActive: false };
   });
@@ -119,8 +131,10 @@ export function registerIPCHandlers(
   /**
    * Poller: Set polling interval
    */
-  ipcMain.handle("poller:setInterval", (event, seconds: number) => {
-    if (isDev) console.log("[IPC] poller:setInterval requested:", seconds);
+  ipcMain.handle(IPC_INVOKE_CHANNELS.POLLER_SET_INTERVAL, (_event, seconds: number) => {
+    if (isDev) {
+      console.log(`[IPC] ${IPC_INVOKE_CHANNELS.POLLER_SET_INTERVAL} requested:`, seconds);
+    }
     if (seconds < 30 || seconds > 300) {
       return {
         success: false,
@@ -134,16 +148,16 @@ export function registerIPCHandlers(
   /**
    * Settings: Get app settings
    */
-  ipcMain.handle("settings:get", () => {
-    if (isDev) console.log("[IPC] settings:get requested");
+  ipcMain.handle(IPC_INVOKE_CHANNELS.SETTINGS_GET, () => {
+    if (isDev) console.log(`[IPC] ${IPC_INVOKE_CHANNELS.SETTINGS_GET} requested`);
     return SettingsManager.get();
   });
 
   /**
    * Settings: Update app settings
    */
-  ipcMain.handle("settings:update", (event, settings) => {
-    if (isDev) console.log("[IPC] settings:update requested:", settings);
+  ipcMain.handle(IPC_INVOKE_CHANNELS.SETTINGS_UPDATE, (_event, settings) => {
+    if (isDev) console.log(`[IPC] ${IPC_INVOKE_CHANNELS.SETTINGS_UPDATE} requested:`, settings);
     const updated = SettingsManager.update(settings);
     // Apply pollingInterval change live if poller is running
     if (settings.pollingInterval && usagePoller) {
@@ -156,7 +170,7 @@ export function registerIPCHandlers(
    * Menu: Show native OS context menu (renders outside window bounds)
    */
   ipcMain.handle(
-    "menu:showContextMenu",
+    IPC_INVOKE_CHANNELS.MENU_SHOW_CONTEXT_MENU,
     (event, opts: { userName: string; planType: string; size: string }) => {
       const win = BrowserWindow.fromWebContents(event.sender);
       const sizes = ["Small", "Medium", "Large"] as const;
@@ -166,12 +180,12 @@ export function registerIPCHandlers(
           label: s,
           type: "radio" as const,
           checked: opts.size === s,
-          click: () => win?.webContents.send("menu:sizeChange", s),
+          click: () => win?.webContents.send(IPC_ON_CHANNELS.MENU_SIZE_CHANGE, s),
         })),
         { type: "separator" },
         {
           label: "Logout",
-          click: () => win?.webContents.send("menu:logout"),
+          click: () => win?.webContents.send(IPC_ON_CHANNELS.MENU_LOGOUT),
         },
         { type: "separator" },
         {
@@ -186,24 +200,24 @@ export function registerIPCHandlers(
   /**
    * App: Quit
    */
-  ipcMain.handle("app:quit", () => {
-    if (isDev) console.log("[IPC] app:quit requested");
+  ipcMain.handle(IPC_INVOKE_CHANNELS.APP_QUIT, () => {
+    if (isDev) console.log(`[IPC] ${IPC_INVOKE_CHANNELS.APP_QUIT} requested`);
     app.quit();
   });
 
-  ipcMain.handle("app:minimize", () => {
+  ipcMain.handle(IPC_INVOKE_CHANNELS.APP_MINIMIZE, () => {
     mainWindow.minimize();
   });
 
   /**
    * App: Get version
    */
-  ipcMain.handle("app:getVersion", () => {
-    if (isDev) console.log("[IPC] app:getVersion requested");
+  ipcMain.handle(IPC_INVOKE_CHANNELS.APP_GET_VERSION, () => {
+    if (isDev) console.log(`[IPC] ${IPC_INVOKE_CHANNELS.APP_GET_VERSION} requested`);
     return { version: app.getVersion() };
   });
 
-  ipcMain.handle("app:openExternal", (_event, url: string) => {
+  ipcMain.handle(IPC_INVOKE_CHANNELS.APP_OPEN_EXTERNAL, (_event, url: string) => {
     const allowed = ["https://claude.ai/"];
     if (allowed.some((prefix) => url.startsWith(prefix))) {
       shell.openExternal(url);
@@ -213,7 +227,7 @@ export function registerIPCHandlers(
   /**
    * Browser preference: reset stored choice
    */
-  ipcMain.handle("browser:resetPreference", () => {
+  ipcMain.handle(IPC_INVOKE_CHANNELS.BROWSER_RESET_PREFERENCE, () => {
     resetBrowserPreference();
     return { success: true };
   });
@@ -221,7 +235,7 @@ export function registerIPCHandlers(
   /**
    * Browser preference: get current browser name
    */
-  ipcMain.handle("browser:getPreference", () => {
+  ipcMain.handle(IPC_INVOKE_CHANNELS.BROWSER_GET_PREFERENCE, () => {
     return { browserName: getPreferredBrowserName() };
   });
 
@@ -230,19 +244,19 @@ export function registerIPCHandlers(
    */
   if (usagePoller) {
     usagePoller.on("usageUpdate", (usageData) => {
-      mainWindow.webContents.send("usage:updated", { usageData });
+      mainWindow.webContents.send(IPC_ON_CHANNELS.USAGE_UPDATED, { usageData });
     });
 
     usagePoller.on("thresholdCrossed", (event) => {
-      mainWindow.webContents.send("notification:threshold", event);
+      mainWindow.webContents.send(IPC_ON_CHANNELS.NOTIFICATION_THRESHOLD, event);
     });
 
     usagePoller.on("authExpired", () => {
-      mainWindow.webContents.send("auth:expired");
+      mainWindow.webContents.send(IPC_ON_CHANNELS.AUTH_EXPIRED);
     });
 
     usagePoller.on("pollError", (error) => {
-      mainWindow.webContents.send("poller:error", {
+      mainWindow.webContents.send(IPC_ON_CHANNELS.POLLER_ERROR, {
         error: error instanceof Error ? error.message : "Unknown error",
       });
     });

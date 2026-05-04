@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { UsageData } from "@shared/types";
 
-interface UsageStoreState {
+export interface UsageStoreState {
   usageData: UsageData | null;
   isLoading: boolean;
   error: string | null;

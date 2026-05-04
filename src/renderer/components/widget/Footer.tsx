@@ -12,18 +12,18 @@ interface FooterProps {
   lastUpdated: Date | null;
   label?: string;
   onRefresh?: () => void;
-  borderTop?: string;
-  padding?: string;
-  labelGap?: number;
+  borderTopClass?: string;
+  paddingClass?: string;
+  labelGapClass?: string;
 }
 
 export function Footer({
   lastUpdated,
   label,
   onRefresh,
-  borderTop = "1px solid rgba(255,255,255,0.05)",
-  padding = "8px 14px 12px",
-  labelGap = 4,
+  borderTopClass = "border-t border-white/5",
+  paddingClass = "px-3.5 pb-3 pt-2",
+  labelGapClass = "mb-1",
 }: FooterProps): React.ReactElement {
   const [version, setVersion] = useState("...");
   useEffect(() => {
@@ -36,30 +36,21 @@ export function Footer({
     <span
       onClick={onRefresh}
       title="Refresh now"
-      style={{ cursor: "pointer", color: "rgba(255,255,255,0.4)" }}
+      className="cursor-pointer text-white/40"
     >
       ↻
     </span>
   );
 
   return (
-    <div style={{ borderTop, padding }}>
+    <div className={`${borderTopClass} ${paddingClass}`}>
       {/* Row 1: username + external link */}
       {label && (
         <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 5,
-            marginBottom: labelGap,
-          }}
+          className={`mb-1 flex items-center gap-1.5 ${labelGapClass}`}
         >
           <span
-            style={{
-              fontSize: 10,
-              color: "rgba(255,255,255,0.45)",
-              fontWeight: 500,
-            }}
+            className="text-[10px] font-medium text-white/45"
           >
             {label}
           </span>
@@ -71,7 +62,7 @@ export function Footer({
                 "https://claude.ai/settings/general",
               )
             }
-            style={{ cursor: "pointer", lineHeight: 0, display: "inline-flex" }}
+            className="inline-flex cursor-pointer leading-none"
           >
             <svg
               width="10"
@@ -92,16 +83,12 @@ export function Footer({
       )}
       {/* Row 2: last updated (left) + version (right) */}
       <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
+        className="flex items-center justify-between"
       >
-        <span style={{ fontSize: 10, color: "rgba(255,255,255,0.25)" }}>
+        <span className="text-[10px] text-white/25">
           Last updated: {formatLastUpdated(lastUpdated)} {refreshBtn}
         </span>
-        <span style={{ fontSize: 10, color: "rgba(255,255,255,0.15)" }}>
+        <span className="text-[10px] text-white/15">
           v{version}
         </span>
       </div>

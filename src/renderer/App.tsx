@@ -33,7 +33,7 @@ const WINDOW_SIZES: Record<SizeOption, [number, number]> = {
   Large: [350, 650],
 };
 
-const ClaudeUsageWidget = () => {
+export const App = () => {
   const { isAuthenticated, checkSession, setAuthenticated } = useAuthStore();
   const fetchCurrent = useUsageStore((state) => state.fetchCurrent);
   const [selectedSize, setSelectedSize] = useState<SizeOption>("Small");
@@ -167,5 +167,3 @@ const ClaudeUsageWidget = () => {
     />
   );
 };
-
-export default ClaudeUsageWidget;
