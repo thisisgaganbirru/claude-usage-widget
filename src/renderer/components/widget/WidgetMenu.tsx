@@ -1,13 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { createPortal } from "react-dom";
 import { SizeOption } from "./WidgetHeader";
 
 interface WidgetMenuProps {
   isOpen: boolean;
-  position: { top: number; left: number };
+  anchorRef: React.RefObject<HTMLElement>;
   selectedSize: SizeOption;
-  isPinned?: boolean;
-  onTogglePin?: (pinned: boolean) => void;
   onSizeChange?: (size: SizeOption) => void;
   onLogout?: () => void;
   onRemove?: () => void;
@@ -16,19 +13,14 @@ interface WidgetMenuProps {
 
 export function WidgetMenu({
   isOpen,
-  position,
+  anchorRef,
   selectedSize,
-  isPinned = true,
-  onTogglePin,
   onSizeChange,
   onLogout,
   onRemove,
   onClose,
 }: WidgetMenuProps): React.ReactElement | null {
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
-
-  const muted = "rgba(255,255,255,0.45)";
-  const dimmer = "rgba(255,255,255,0.28)";
 
   // Close when window loses focus (click on desktop/other app)
   useEffect(() => {
@@ -38,47 +30,31 @@ export function WidgetMenu({
     return () => window.removeEventListener("blur", close);
   }, [isOpen, onClose]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const onMouseDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      const anchorEl = anchorRef.current;
+      const menuEl = document.querySelector("[data-widget-menu]");
+      if (anchorEl?.contains(target)) return;
+      if (menuEl?.contains(target)) return;
+      onClose();
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [isOpen, anchorRef, onClose]);
+
   if (!isOpen) return null;
 
-  return createPortal(
-    <>
-      {/* Invisible full-screen backdrop — catches all outside clicks */}
-      <div
-        onMouseDown={() => onClose()}
-        style={{
-          position: "fixed",
-          inset: 0,
-          zIndex: 9998,
-        }}
-      />
+  return (
       <div
         onMouseDown={(e) => e.stopPropagation()}
         data-widget-menu
-        style={{
-          position: "fixed",
-          top: position.top,
-          left: position.left,
-          width: 200,
-          background: "rgba(28,28,31,0.98)",
-          border: "1px solid rgba(255,255,255,0.1)",
-          borderRadius: 10,
-          boxShadow: "0 8px 24px rgba(0,0,0,0.55)",
-          zIndex: 9999,
-          padding: "6px 0",
-        }}
+        className="absolute right-0 top-[calc(100%+4px)] z-[9999] w-[200px] rounded-[10px] border border-white/10 bg-[rgba(28,28,31,0.98)] py-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.55)]"
       >
         {/* Size label */}
-        <div
-          style={{
-            padding: "4px 12px 5px",
-            color: dimmer,
-            fontSize: 10,
-            fontWeight: 600,
-            letterSpacing: "0.07em",
-            textTransform: "uppercase",
-            userSelect: "none",
-          }}
-        >
+        <div className="select-none px-3 pb-[5px] pt-1 text-[10px] font-semibold uppercase tracking-[0.07em] text-white/30">
           Size
         </div>
 
@@ -93,44 +69,18 @@ export function WidgetMenu({
               }}
               onMouseEnter={() => setHoveredItem(size)}
               onMouseLeave={() => setHoveredItem(null)}
-              style={{
-                width: "100%",
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "6px 12px",
-                background:
-                  hoveredItem === size
-                    ? "rgba(255,255,255,0.06)"
-                    : "transparent",
-                border: "none",
-                color: active ? "#fff" : muted,
-                fontSize: 13,
-                cursor: "pointer",
-                textAlign: "left",
-                transition: "background 0.15s",
-              }}
+              className={`flex w-full cursor-pointer items-center gap-2.5 border-0 px-3 py-1.5 text-left text-[13px] transition-colors ${
+                hoveredItem === size ? "bg-white/[0.06]" : "bg-transparent"
+              } ${active ? "text-white" : "text-white/45"}`}
             >
               <span
-                style={{
-                  width: 14,
-                  height: 14,
-                  borderRadius: "50%",
-                  border: `2px solid ${active ? "#C15F3C" : "rgba(255,255,255,0.22)"}`,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                }}
+                className={`flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-full border-2 ${
+                  active ? "border-[#C15F3C]" : "border-white/[0.22]"
+                }`}
               >
                 {active && (
                   <span
-                    style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: "50%",
-                      background: "#C15F3C",
-                    }}
+                    className="h-1.5 w-1.5 rounded-full bg-[#C15F3C]"
                   />
                 )}
               </span>
@@ -140,51 +90,7 @@ export function WidgetMenu({
         })}
 
         {/* Divider */}
-        <div
-          style={{
-            height: 1,
-            background: "rgba(255,255,255,0.07)",
-            margin: "5px 0",
-          }}
-        />
-
-        <button
-          onClick={() => {
-            onTogglePin?.(!isPinned);
-            onClose();
-          }}
-          onMouseEnter={() => setHoveredItem("pin")}
-          onMouseLeave={() => setHoveredItem(null)}
-          style={{
-            width: "100%",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "7px 12px",
-            background:
-              hoveredItem === "pin" ? "rgba(255,255,255,0.06)" : "transparent",
-            border: "none",
-            color: "rgba(255,255,255,0.6)",
-            fontSize: 13,
-            cursor: "pointer",
-            textAlign: "left",
-            transition: "background 0.15s",
-          }}
-        >
-          <span>{isPinned ? "Unpin from top" : "Pin to top"}</span>
-          <span style={{ color: isPinned ? "#C15F3C" : "rgba(255,255,255,0.35)" }}>
-            {isPinned ? "✓" : ""}
-          </span>
-        </button>
-
-        {/* Divider */}
-        <div
-          style={{
-            height: 1,
-            background: "rgba(255,255,255,0.07)",
-            margin: "5px 0",
-          }}
-        />
+        <div className="my-[5px] h-px bg-white/[0.07]" />
 
         {/* Logout */}
         <button
@@ -194,22 +100,11 @@ export function WidgetMenu({
           }}
           onMouseEnter={() => setHoveredItem("logout")}
           onMouseLeave={() => setHoveredItem(null)}
-          style={{
-            width: "100%",
-            display: "flex",
-            alignItems: "center",
-            gap: 9,
-            padding: "7px 12px",
-            background:
-              hoveredItem === "logout" ? "rgba(239,68,68,0.08)" : "transparent",
-            border: "none",
-            color:
-              hoveredItem === "logout" ? "#ef4444" : "rgba(255,255,255,0.6)",
-            fontSize: 13,
-            cursor: "pointer",
-            textAlign: "left",
-            transition: "background 0.15s",
-          }}
+          className={`flex w-full cursor-pointer items-center gap-[9px] border-0 px-3 py-[7px] text-left text-[13px] transition-colors ${
+            hoveredItem === "logout"
+              ? "bg-red-500/10 text-red-500"
+              : "bg-transparent text-white/60"
+          }`}
         >
           <svg
             width="13"
@@ -229,13 +124,7 @@ export function WidgetMenu({
         </button>
 
         {/* Divider */}
-        <div
-          style={{
-            height: 1,
-            background: "rgba(255,255,255,0.07)",
-            margin: "5px 0",
-          }}
-        />
+        <div className="my-[5px] h-px bg-white/[0.07]" />
 
         {/* Remove */}
         <button
@@ -245,26 +134,12 @@ export function WidgetMenu({
           }}
           onMouseEnter={() => setHoveredItem("remove")}
           onMouseLeave={() => setHoveredItem(null)}
-          style={{
-            width: "100%",
-            display: "flex",
-            alignItems: "center",
-            gap: 9,
-            padding: "7px 12px",
-            background:
-              hoveredItem === "remove" ? "rgba(255,44,44,0.08)" : "transparent",
-            border: "none",
-            color: "#ef4444",
-            fontSize: 13,
-            cursor: "pointer",
-            textAlign: "left",
-            transition: "background 0.15s",
-          }}
+          className={`flex w-full cursor-pointer items-center gap-[9px] border-0 px-3 py-[7px] text-left text-[13px] text-red-500 transition-colors ${
+            hoveredItem === "remove" ? "bg-red-500/10" : "bg-transparent"
+          }`}
         >
           ✕&nbsp; Remove widget
         </button>
       </div>
-    </>,
-    document.body,
   );
 }
