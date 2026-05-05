@@ -3,13 +3,17 @@ import isDev from "electron-is-dev";
 import { UsageData } from "@shared/types";
 import { fetchUsageData } from "./usage-fetcher";
 import { SessionManager } from "@main/auth/session-manager";
+import { SettingsManager } from "@main/settings/settings-manager";
 
 export class UsagePoller extends EventEmitter {
-  private pollingInterval: ReturnType<typeof setInterval> | null = null;
+  private pollingTimeout: ReturnType<typeof setTimeout> | null = null;
   private pollDuration: number = 60000; // 60 seconds default
   private isPolling: boolean = false;
+  private isPollInFlight: boolean = false;
+  private transientFailureCount: number = 0;
   private lastUsageData: UsageData | null = null;
-  private notifiedThresholds: Set<number> = new Set();
+  private notifiedSessionThresholds: Set<number> = new Set();
+  private notifiedWeeklyThresholds: Set<number> = new Set();
 
   constructor(pollDurationSeconds: number = 60) {
     super();
@@ -29,23 +33,23 @@ export class UsagePoller extends EventEmitter {
       `[UsagePoller] Starting polling (interval: ${this.pollDuration}ms)`,
     );
     this.isPolling = true;
+    this.transientFailureCount = 0;
 
-    // Poll immediately first, then set interval
-    this.poll();
-    this.pollingInterval = setInterval(() => this.poll(), this.pollDuration);
+    // Poll immediately first
+    this.scheduleNextPoll(0);
   }
 
   /**
    * Stop polling
    */
   stop(): void {
-    if (this.pollingInterval) {
-      if (isDev) console.log("[UsagePoller] Stopping polling");
-      clearInterval(this.pollingInterval);
-      this.pollingInterval = null;
-      this.isPolling = false;
-      this.notifiedThresholds.clear();
-    }
+    if (isDev) console.log("[UsagePoller] Stopping polling");
+    this.clearScheduledPoll();
+    this.isPolling = false;
+    this.isPollInFlight = false;
+    this.transientFailureCount = 0;
+    this.notifiedSessionThresholds.clear();
+    this.notifiedWeeklyThresholds.clear();
   }
 
   /**
@@ -72,18 +76,29 @@ export class UsagePoller extends EventEmitter {
    * Trigger a one-off refresh outside the scheduled interval.
    */
   async refreshNow(): Promise<void> {
-    await this.poll();
+    if (!this.isPolling) {
+      await this.poll(true);
+      return;
+    }
+    this.scheduleNextPoll(0);
   }
 
   /**
    * Execute a single poll
    */
-  private async poll(): Promise<void> {
+  private async poll(force: boolean = false): Promise<void> {
+    if ((!this.isPolling && !force) || this.isPollInFlight) return;
+    this.isPollInFlight = true;
+    let nextDelay = this.pollDuration;
+
     try {
       const sessionCookie = SessionManager.getSessionCookie();
 
       if (!sessionCookie) {
-        this.emit("authExpired");
+        this.emit("authExpired", {
+          reason: "missing_session",
+          message: "No local session token was found.",
+        });
         this.stop();
         return;
       }
@@ -92,6 +107,7 @@ export class UsagePoller extends EventEmitter {
       this.lastUsageData = usageData;
       this.emit("usageUpdate", usageData);
       this.checkThresholds(usageData);
+      this.transientFailureCount = 0;
 
       if (isDev) console.log(
         `[UsagePoller] Usage: ${usageData.currentUsage}/${usageData.planLimit} (${usageData.percentageUsed.toFixed(1)}%)`,
@@ -110,33 +126,155 @@ export class UsagePoller extends EventEmitter {
           "[UsagePoller] Auth error — session expired on server. Clearing and stopping.",
         );
         SessionManager.clearSession();
-        this.emit("authExpired");
+        this.emit("authExpired", {
+          reason: "server_auth_failed",
+          message: "Session expired on Claude.ai. Please log in again.",
+        });
         this.stop();
         return;
       }
 
       console.error("[UsagePoller] Poll failed:", message);
-      this.emit("pollError", error);
+      this.transientFailureCount += 1;
+      nextDelay = this.getRetryDelayMs();
+      this.emit(
+        "pollError",
+        new Error(
+          `${message} (retrying in ${Math.round(nextDelay / 1000)}s)`,
+        ),
+      );
+    } finally {
+      this.isPollInFlight = false;
+      if (this.isPolling && !force) {
+        this.scheduleNextPoll(nextDelay);
+      }
     }
+  }
+
+  private getRetryDelayMs(): number {
+    const baseMs = 5000;
+    const exponent = Math.max(0, this.transientFailureCount - 1);
+    const backoffMs = baseMs * Math.pow(2, exponent);
+    return Math.min(backoffMs, 300000);
+  }
+
+  private clearScheduledPoll(): void {
+    if (!this.pollingTimeout) return;
+    clearTimeout(this.pollingTimeout);
+    this.pollingTimeout = null;
+  }
+
+  private scheduleNextPoll(delayMs: number): void {
+    this.clearScheduledPoll();
+    if (!this.isPolling) return;
+    this.pollingTimeout = setTimeout(() => {
+      void this.poll();
+    }, delayMs);
   }
 
   /**
    * Check if usage has crossed notification thresholds
    */
   private checkThresholds(usageData: UsageData): void {
-    const thresholds = [50, 75, 90, 95];
-    const percentage = usageData.percentageUsed;
+    const settings = SettingsManager.get();
+    const sessionThresholds = Array.from(
+      new Set(
+        settings.notificationThresholds.filter(
+          (value) => Number.isFinite(value) && value > 0 && value <= 100,
+        ),
+      ),
+    ).sort((a, b) => a - b);
 
-    for (const threshold of thresholds) {
-      if (percentage >= threshold && !this.notifiedThresholds.has(threshold)) {
-        this.notifiedThresholds.add(threshold);
-        this.emit("thresholdCrossed", { threshold, percentage, usageData });
+    if (!settings.enableDesktopNotifications && !settings.enableBannerNotifications) {
+      this.notifiedSessionThresholds.clear();
+      this.notifiedWeeklyThresholds.clear();
+      return;
+    }
+
+    this.checkSessionThresholds(usageData, sessionThresholds);
+    this.checkWeeklyThresholds(usageData);
+  }
+
+  private checkSessionThresholds(
+    usageData: UsageData,
+    sessionThresholds: number[],
+  ): void {
+    if (sessionThresholds.length === 0) {
+      this.notifiedSessionThresholds.clear();
+      return;
+    }
+
+    const configuredThresholds = new Set(sessionThresholds);
+    this.notifiedSessionThresholds.forEach((value) => {
+      if (!configuredThresholds.has(value)) {
+        this.notifiedSessionThresholds.delete(value);
+      }
+    });
+
+    const sessionPercentage = usageData.percentageUsed;
+
+    for (const threshold of sessionThresholds) {
+      if (
+        sessionPercentage >= threshold &&
+        !this.notifiedSessionThresholds.has(threshold)
+      ) {
+        this.notifiedSessionThresholds.add(threshold);
+        this.emit("thresholdCrossed", {
+          threshold,
+          percentage: sessionPercentage,
+          scope: "session",
+          usageData,
+        });
       }
     }
 
-    // Reset thresholds if usage dropped below 50% (new cycle)
-    if (percentage < 50) {
-      this.notifiedThresholds.clear();
+    const minThreshold = sessionThresholds[0];
+    if (sessionPercentage < minThreshold) {
+      this.notifiedSessionThresholds.clear();
+    }
+  }
+
+  private checkWeeklyThresholds(usageData: UsageData): void {
+    const settings = SettingsManager.get();
+    const weeklyThresholds = Array.from(
+      new Set(
+        settings.weeklyNotificationThresholds.filter(
+          (value) => Number.isFinite(value) && value > 0 && value <= 100,
+        ),
+      ),
+    ).sort((a, b) => a - b);
+
+    if (weeklyThresholds.length === 0) {
+      this.notifiedWeeklyThresholds.clear();
+      return;
+    }
+
+    const configuredThresholds = new Set(weeklyThresholds);
+    this.notifiedWeeklyThresholds.forEach((value) => {
+      if (!configuredThresholds.has(value)) {
+        this.notifiedWeeklyThresholds.delete(value);
+      }
+    });
+
+    const weeklyPercentage = Math.min(100, Math.max(0, usageData.sevenDayUsage));
+
+    for (const threshold of weeklyThresholds) {
+      if (
+        weeklyPercentage >= threshold &&
+        !this.notifiedWeeklyThresholds.has(threshold)
+      ) {
+        this.notifiedWeeklyThresholds.add(threshold);
+        this.emit("thresholdCrossed", {
+          threshold,
+          percentage: weeklyPercentage,
+          scope: "weekly",
+          usageData,
+        });
+      }
+    }
+
+    if (weeklyPercentage < weeklyThresholds[0]) {
+      this.notifiedWeeklyThresholds.clear();
     }
   }
 

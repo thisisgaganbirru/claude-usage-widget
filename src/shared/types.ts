@@ -2,7 +2,10 @@
  * Shared TypeScript types across main and renderer processes
  */
 
+export type ProviderType = "claude" | "chatgpt";
+
 export interface UsageData {
+  provider: ProviderType;
   // 5-hour rolling window (current session)
   currentUsage: number; // five_hour.utilization (0-100 %)
   planLimit: number; // Always 100 (utilization is already %)
@@ -43,12 +46,33 @@ export interface AuthState {
 export interface WidgetSettings {
   pollingInterval: number; // in seconds (30-300)
   notificationThresholds: number[]; // [50, 75, 90, 95]
-  enableNotifications: boolean;
+  weeklyNotificationThresholds: number[]; // [50, 75, 90, 100]
+  enableDesktopNotifications: boolean;
+  enableBannerNotifications: boolean;
   startOnBoot: boolean;
+  keepInTray: boolean;
+  quickEntryShortcut: string;
   theme: "light" | "dark" | "auto";
 }
 
 export interface IpcMessage {
   channel: string;
   data?: any;
+}
+
+export type LoginFailureReason =
+  | "cancelled"
+  | "token_missing"
+  | "login_failed";
+
+export interface AuthExpiredEvent {
+  reason: "missing_session" | "server_auth_failed";
+  message: string;
+}
+
+export interface ThresholdCrossedEvent {
+  threshold: number;
+  percentage: number;
+  scope: "session" | "weekly";
+  usageData: UsageData;
 }
