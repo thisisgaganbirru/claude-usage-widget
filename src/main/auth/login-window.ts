@@ -19,6 +19,7 @@
 import { BrowserWindow, session } from "electron";
 import isDev from "electron-is-dev";
 import { saveSession, SESSION_COOKIE_KEYS } from "./session-manager";
+import { LoginFailureReason } from "@shared/types";
 
 // Impersonate a real Chrome UA — Google's OAuth blocks Electron's default UA.
 const CHROME_UA =
@@ -71,6 +72,8 @@ function getValidSessionCookie(
 export interface LoginResult {
   success: boolean;
   cookie: string | null;
+  reason?: LoginFailureReason;
+  message?: string;
 }
 
 /**
@@ -105,6 +108,7 @@ export async function openLoginWindow(
 
     let resolved = false;
     let finalizing = false;
+    let sawPostLoginUrl = false;
     // Holds a reference so we can remove the listener on cleanup
     let cookieChangedHandler:
       | ((
@@ -222,6 +226,7 @@ export async function openLoginWindow(
         console.log("[LoginWindow] Poll URL:", currentUrl);
 
         if (isPostLoginUrl(currentUrl)) {
+          sawPostLoginUrl = true;
           console.log("[LoginWindow] ✅ Post-login URL detected:", currentUrl);
           onLoginDetected();
           return;
@@ -252,12 +257,18 @@ export async function openLoginWindow(
     // Fallback: navigation events (non-SPA redirects)
     loginWindow.webContents.on("did-navigate", (_e, url) => {
       console.log("[LoginWindow] did-navigate:", url);
-      if (isPostLoginUrl(url)) onLoginDetected();
+      if (isPostLoginUrl(url)) {
+        sawPostLoginUrl = true;
+        onLoginDetected();
+      }
     });
 
     loginWindow.webContents.on("did-navigate-in-page", (_e, url) => {
       console.log("[LoginWindow] did-navigate-in-page:", url);
-      if (isPostLoginUrl(url)) onLoginDetected();
+      if (isPostLoginUrl(url)) {
+        sawPostLoginUrl = true;
+        onLoginDetected();
+      }
     });
 
     loginWindow.on("closed", () => {
@@ -268,9 +279,27 @@ export async function openLoginWindow(
       }
       if (!resolved) {
         resolved = true;
-        if (isDev)
+        if (isDev) {
           console.log("[LoginWindow] Window closed without completing login");
-        resolve({ success: false, cookie: null });
+        }
+
+        if (sawPostLoginUrl) {
+          resolve({
+            success: false,
+            cookie: null,
+            reason: "token_missing",
+            message:
+              "Login appeared to complete, but no Claude session token was captured. Please try again.",
+          });
+          return;
+        }
+
+        resolve({
+          success: false,
+          cookie: null,
+          reason: "cancelled",
+          message: "Login was cancelled before completion.",
+        });
       }
     });
 

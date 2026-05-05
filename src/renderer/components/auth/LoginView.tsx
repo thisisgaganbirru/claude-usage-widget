@@ -1,41 +1,100 @@
 import React, { useState } from "react";
 import { useAuthStore } from "@renderer/store/auth-store";
 import claudeIcon from "../../assets/ClaudeIcon-Square.svg";
+import { LoginFailureReason } from "@shared/types";
+
+type LoginStep = "idle" | "opening" | "waiting" | "verifying";
 
 const FEATURES: { icon: string; label: string }[] = [
   { icon: "⚡", label: "Live 5-hour session & 7-day rolling usage" },
   { icon: "🎨", label: "Per-model breakdown — Opus, Sonnet & Haiku" },
-  { icon: "🔔", label: "Desktop alerts at custom usage thresholds" },
+  { icon: "🔔", label: "Desktop usage alerts at your chosen thresholds" },
   { icon: "📊", label: "Compact system-tray widget, always in reach" },
 ];
+
+function getLoginErrorMessage(
+  reason?: LoginFailureReason,
+  message?: string,
+): string {
+  if (reason === "token_missing") {
+    return (
+      message ??
+      "Login finished, but no Claude session token was captured. Try logging in again."
+    );
+  }
+  if (reason === "cancelled") {
+    return "Login cancelled. Please try again.";
+  }
+  return message ?? "Login failed. Please try again.";
+}
+
+function getStepMessage(step: LoginStep): string {
+  if (step === "opening") return "Opening login window…";
+  if (step === "waiting") return "Complete sign-in in the opened window…";
+  if (step === "verifying") return "Verifying session token…";
+  return "Login with Claude";
+}
 
 export function LoginView(): React.ReactElement {
   const { setAuthenticated } = useAuthStore();
   const [isLoading, setIsLoading] = useState(false);
   const [windowOpened, setWindowOpened] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [step, setStep] = useState<LoginStep>("idle");
+  const [slowHint, setSlowHint] = useState(false);
+  const [diagCopied, setDiagCopied] = useState(false);
+  const [attempts, setAttempts] = useState(0);
+  const [showHelpActions, setShowHelpActions] = useState(false);
+
+  const copyDiagnostics = async () => {
+    const diagnostics = [
+      `timestamp=${new Date().toISOString()}`,
+      `step=${step}`,
+      `loading=${isLoading}`,
+      `window_opened=${windowOpened}`,
+      `attempts=${attempts}`,
+      `error=${error ?? "none"}`,
+      `user_agent=${navigator.userAgent}`,
+    ].join("\n");
+
+    try {
+      await navigator.clipboard.writeText(diagnostics);
+      setDiagCopied(true);
+      setTimeout(() => setDiagCopied(false), 1500);
+    } catch (copyError) {
+      console.error("[LoginView] Failed to copy diagnostics:", copyError);
+      setError("Could not copy diagnostics. Please copy logs from DevTools.");
+    }
+  };
 
   const handleLogin = async (): Promise<void> => {
+    setAttempts((count) => count + 1);
     setIsLoading(true);
     setWindowOpened(false);
     setError(null);
+    setDiagCopied(false);
+    setSlowHint(false);
+    setStep("opening");
 
-    const onWindowOpened = () => setWindowOpened(true);
+    const slowTimer = setTimeout(() => setSlowHint(true), 15000);
+    const onWindowOpened = () => {
+      setWindowOpened(true);
+      setStep("waiting");
+    };
     window.electron?.ipcRenderer?.on("auth:login-window-opened", onWindowOpened);
 
     try {
       if (!window.electron || !window.electron.ipcRenderer) {
-        throw new Error(
-          "IPC bridge not available. Please restart the application.",
-        );
+        throw new Error("IPC bridge not available. Please restart the application.");
       }
 
       const result = await window.electron.ipcRenderer.invoke("auth:login");
+      setStep("verifying");
 
       if (result.success && result.isAuthenticated) {
         setAuthenticated(true);
       } else {
-        setError("Login cancelled. Please try again.");
+        setError(getLoginErrorMessage(result.reason, result.message));
       }
     } catch (err) {
       const errorMessage =
@@ -43,8 +102,11 @@ export function LoginView(): React.ReactElement {
       console.error("[LoginView] Login error:", errorMessage);
       setError(errorMessage);
     } finally {
+      clearTimeout(slowTimer);
       setIsLoading(false);
       setWindowOpened(false);
+      setSlowHint(false);
+      setStep("idle");
       window.electron?.ipcRenderer?.removeListener(
         "auth:login-window-opened",
         onWindowOpened,
@@ -58,6 +120,13 @@ export function LoginView(): React.ReactElement {
       className="relative flex h-[600px] w-[800px] overflow-hidden bg-[#0c0c0d] font-['Segoe_UI',_Roboto,_sans-serif]"
     >
       <div className="absolute right-4 top-3.5 z-10 flex gap-2">
+        <button
+          onClick={() => (window as any).electron?.ipcRenderer?.invoke("app:minimize")}
+          title="Minimize"
+          className="px-1 text-lg leading-none text-white/50 transition-colors hover:text-white"
+        >
+          —
+        </button>
         <button
           onClick={() => (window as any).electron?.ipcRenderer?.invoke("app:quit")}
           title="Quit"
@@ -111,12 +180,19 @@ export function LoginView(): React.ReactElement {
           <h2 className="mb-1.5 text-[22px] font-bold tracking-[-0.3px] text-white">
             Welcome back
           </h2>
-          <p className="mb-8 text-[13px] leading-[1.5] text-white/45">
+          <p className="mb-6 text-[13px] leading-[1.5] text-white/45">
             Sign in with your Claude account to start tracking your API usage.
           </p>
 
+          {slowHint && isLoading && (
+            <div className="mb-4 rounded-[10px] border border-amber-400/25 bg-amber-400/10 px-3 py-2.5 text-xs text-amber-200">
+              This is taking longer than usual. If the browser window is open,
+              complete sign-in there and wait a moment for token verification.
+            </div>
+          )}
+
           {error && (
-            <div className="mb-5 flex items-start gap-[9px] rounded-[10px] border border-red-500/25 bg-red-500/10 px-[14px] py-[11px]">
+            <div className="mb-4 flex items-start gap-[9px] rounded-[10px] border border-red-500/25 bg-red-500/10 px-[14px] py-[11px]">
               <span className="mt-[3px] h-[7px] w-[7px] shrink-0 rounded-full bg-red-500 shadow-[0_0_6px_#ef4444]" />
               <span className="text-xs leading-[1.5] text-red-300">{error}</span>
             </div>
@@ -130,14 +206,42 @@ export function LoginView(): React.ReactElement {
             {isLoading ? (
               <span className="flex items-center justify-center gap-[9px]">
                 <span className="h-[15px] w-[15px] shrink-0 animate-spin rounded-full border-2 border-white/35 border-t-white" />
-                {windowOpened
-                  ? "Complete login in the opened window…"
-                  : "Opening login window…"}
+                {getStepMessage(step)}
               </span>
             ) : (
               "Login with Claude"
             )}
           </button>
+
+          <div className="mt-3 text-center">
+            <button
+              onClick={() => setShowHelpActions((v) => !v)}
+              className="text-[11px] text-white/45 underline-offset-2 transition-colors hover:text-white/70 hover:underline"
+            >
+              {showHelpActions ? "Hide help actions" : "Need help?"}
+            </button>
+            {showHelpActions && (
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <button
+                  onClick={() =>
+                    (window as any).electron?.ipcRenderer?.invoke(
+                      "app:openExternal",
+                      "https://claude.ai/login",
+                    )
+                  }
+                  className="rounded-md border border-white/15 bg-white/[0.04] px-2 py-1.5 text-[11px] text-white/70 transition-colors hover:bg-white/[0.08]"
+                >
+                  Open Claude
+                </button>
+                <button
+                  onClick={() => void copyDiagnostics()}
+                  className="rounded-md border border-white/15 bg-white/[0.04] px-2 py-1.5 text-[11px] text-white/70 transition-colors hover:bg-white/[0.08]"
+                >
+                  {diagCopied ? "Copied" : "Copy debug"}
+                </button>
+              </div>
+            )}
+          </div>
 
           <div className="my-6 h-px bg-white/5" />
 
@@ -156,7 +260,7 @@ export function LoginView(): React.ReactElement {
               <path d="M7 11V7a5 5 0 0 1 10 0v4" />
             </svg>
             <span className="text-xs text-white/30">
-              Your credentials are secure and never stored
+              Credentials are handled by Claude; only an encrypted session token is stored locally
             </span>
           </div>
         </div>
