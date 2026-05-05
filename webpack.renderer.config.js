@@ -5,6 +5,8 @@ module.exports = {
   // Renderer runs with nodeIntegration: false, so bundle for web context
   // to avoid runtime `require` references in the browser environment.
   target: "web",
+  // Avoid eval-based source maps to stay compatible with strict CSP.
+  devtool: "source-map",
   module: {
     rules: commonRules,
   },
