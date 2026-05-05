@@ -256,8 +256,7 @@ export function SettingsPanel({
                         <span className={`font-medium ${draft.notificationThresholds.includes(val) ? "text-white" : "text-[#555]"}`}>
                           {val}%
                         </span>
-                        <div className="h-1 w-1 rounded-full transition-all" 
-                             style={{ backgroundColor: draft.notificationThresholds.includes(val) ? '#cc785c' : '#222' }} />
+                        <div className={`h-1 w-1 rounded-full transition-all ${draft.notificationThresholds.includes(val) ? 'bg-[#cc785c]' : 'bg-[#222]'}`} />
                       </button>
                     ))}
                   </div>
@@ -275,8 +274,7 @@ export function SettingsPanel({
                         <span className={`font-medium ${draft.weeklyNotificationThresholds.includes(val) ? "text-white" : "text-[#555]"}`}>
                           {val}%
                         </span>
-                        <div className="h-1 w-1 rounded-full transition-all"
-                             style={{ backgroundColor: draft.weeklyNotificationThresholds.includes(val) ? '#cc785c' : '#222' }} />
+                        <div className={`h-1 w-1 rounded-full transition-all ${draft.weeklyNotificationThresholds.includes(val) ? 'bg-[#cc785c]' : 'bg-[#222]'}`} />
                       </button>
                     ))}
                   </div>

@@ -16,6 +16,7 @@ export interface UsageStoreState {
 }
 
 const defaultUsageData: UsageData = {
+  provider: "claude",
   currentUsage: 0,
   planLimit: 100,
   percentageUsed: 0,
