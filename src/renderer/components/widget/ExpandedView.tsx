@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useUsageData } from "@renderer/hooks/useUsageData";
 import { WidgetHeader, SizeOption } from "./WidgetHeader";
 import { Footer } from "./Footer";
+import { AlertBanner } from "./AlertBanner";
 
 function formatCountdown(ms: number): string {
   if (ms <= 0) return "0d 00:00:00";
@@ -107,18 +108,32 @@ export function ExpandedView({
   isPinned,
   onTogglePin,
   onLogout,
+  onHardLogout,
   onRemove,
+  alertMessage,
+  onAlertIgnore,
+  onAlertHoverStart,
+  onAlertHoverEnd,
 }: {
   selectedSize: SizeOption;
   onSizeChange: (s: SizeOption) => void;
   isPinned?: boolean;
   onTogglePin?: (pinned: boolean) => void;
   onLogout?: () => void;
+  onHardLogout?: () => void;
   onRemove?: () => void;
+  alertMessage?: string | null;
+  onAlertIgnore?: () => void;
+  onAlertHoverStart?: () => void;
+  onAlertHoverEnd?: () => void;
 }): React.ReactElement {
   const { usageData, isLoading, lastUpdated } = useUsageData();
   const [countdown, setCountdown] = useState("0d 00:00:00");
   const [hoveredModel, setHoveredModel] = useState<number | null>(null);
+  const [selectedThresholds, setSelectedThresholds] = useState<number[]>([
+    50, 75, 90, 95,
+  ]);
+  const [isUpdatingThresholds, setIsUpdatingThresholds] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -136,6 +151,54 @@ export function ExpandedView({
       setCountdown(formatCountdown(ms));
     }
   }, [usageData?.sevenDayResetTime]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const settings = await (window as any).electron?.ipcRenderer?.invoke(
+          "settings:get",
+        );
+        if (Array.isArray(settings?.notificationThresholds)) {
+          setSelectedThresholds(
+            settings.notificationThresholds
+              .filter((value: number) => Number.isFinite(value))
+              .sort((a: number, b: number) => a - b),
+          );
+        }
+      } catch {
+        // Keep defaults if settings fetch fails.
+      }
+    })();
+  }, []);
+
+  const toggleThreshold = async (threshold: number) => {
+    if (isUpdatingThresholds) return;
+    const has = selectedThresholds.includes(threshold);
+    const nextThresholds = has
+      ? selectedThresholds.filter((value) => value !== threshold)
+      : [...selectedThresholds, threshold];
+    const normalized = Array.from(new Set(nextThresholds)).sort((a, b) => a - b);
+
+    setSelectedThresholds(normalized);
+    setIsUpdatingThresholds(true);
+    try {
+      const result = await (window as any).electron?.ipcRenderer?.invoke(
+        "settings:update",
+        { notificationThresholds: normalized },
+      );
+      if (Array.isArray(result?.settings?.notificationThresholds)) {
+        setSelectedThresholds(
+          result.settings.notificationThresholds
+            .filter((value: number) => Number.isFinite(value))
+            .sort((a: number, b: number) => a - b),
+        );
+      }
+    } catch {
+      // Best-effort update; UI already optimistic.
+    } finally {
+      setIsUpdatingThresholds(false);
+    }
+  };
 
   if (isLoading || !usageData) {
     return (
@@ -172,7 +235,16 @@ export function ExpandedView({
         <div
           data-widget-card
           className="overflow-visible rounded-[18px] border border-white/10 bg-[rgba(24,24,27,0.97)] shadow-[0_8px_32px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl"
+          onMouseEnter={onAlertHoverStart}
+          onMouseLeave={onAlertHoverEnd}
         >
+          {alertMessage ? (
+            <AlertBanner
+              message={alertMessage}
+              className="rounded-t-[18px]"
+              onIgnore={onAlertIgnore}
+            />
+          ) : null}
           <div className="border-b border-white/5">
             <WidgetHeader
               planType={usageData.planType}
@@ -182,6 +254,7 @@ export function ExpandedView({
               onTogglePin={onTogglePin}
               onSizeChange={onSizeChange}
               onLogout={onLogout}
+              onHardLogout={onHardLogout}
               onRemove={onRemove}
             />
           </div>
@@ -274,22 +347,23 @@ export function ExpandedView({
                 ALERT THRESHOLDS
               </div>
               <div className="flex gap-1.5">
-                {[
-                  { pct: 50, active: false },
-                  { pct: 75, active: true },
-                  { pct: 90, active: true },
-                ].map((t) => (
-                  <div
-                    key={t.pct}
-                    className={`flex-1 rounded-md border py-[5px] text-center text-[10px] font-semibold ${
-                      t.active
+                {[50, 75, 90, 95].map((pct) => (
+                  <button
+                    key={pct}
+                    onClick={() => void toggleThreshold(pct)}
+                    disabled={isUpdatingThresholds}
+                    className={`flex-1 rounded-md border py-[5px] text-center text-[10px] font-semibold transition-colors ${
+                      selectedThresholds.includes(pct)
                         ? "border-[#C15F3C]/25 bg-[#C15F3C]/10 text-[#C15F3C]"
                         : "border-white/10 text-white/25"
-                    }`}
+                    } disabled:opacity-60`}
                   >
-                    {t.pct}%
-                  </div>
+                    {pct}%
+                  </button>
                 ))}
+              </div>
+              <div className="mt-1.5 text-[9px] text-white/25">
+                Click to enable/disable alert levels
               </div>
             </div>
 
