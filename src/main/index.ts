@@ -16,6 +16,7 @@ import { SessionManager } from "./auth/session-manager";
 import { UsagePoller } from "./data/usage-poller";
 import { registerIPCHandlers } from "./ipc/handlers";
 import { TrayManager } from "./tray";
+import { SettingsManager } from "./settings/settings-manager";
 import isDev from "electron-is-dev";
 
 // ── File logger (writes to %APPDATA%/claude-usage-widget/logs/main.log) ──────
@@ -74,21 +75,6 @@ ipcMain.handle("resize-window", (_event, width: number, height: number) => {
     return { success: true, size: { width, height } };
   }
   return { success: false };
-});
-
-ipcMain.handle("get-window-position", () => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    const [x, y] = mainWindow.getPosition();
-    return { x, y };
-  }
-  return { x: 0, y: 0 };
-});
-
-// IPC handler to move window (custom drag — avoids Aero Snap)
-ipcMain.handle("move-window", (_event, x: number, y: number) => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.setPosition(Math.round(x), Math.round(y));
-  }
 });
 
 ipcMain.handle("window:getPinned", () => ({ pinned: isPinned }));
@@ -197,7 +183,8 @@ const createWindow = () => {
 
   // Hide to tray on close instead of quitting
   newWindow.on("close", (event) => {
-    if (!(app as any).isQuitting) {
+    const keepInTray = SettingsManager.get().keepInTray;
+    if (!(app as any).isQuitting && keepInTray) {
       event.preventDefault();
       newWindow.hide();
     }
@@ -231,12 +218,15 @@ const app_ready = () => {
 
     // Register for auto-launch on Windows login (only in packaged production build)
     if (!isDev) {
+      const startOnBoot = SettingsManager.get().startOnBoot;
       app.setLoginItemSettings({
-        openAtLogin: true,
+        openAtLogin: startOnBoot,
         openAsHidden: true,
         name: "Claude Usage Widget",
       });
-      console.log("[Main] Auto-start on login: registered");
+      console.log(
+        `[Main] Auto-start on login: ${startOnBoot ? "enabled" : "disabled"}`,
+      );
     }
 
     usagePoller = new UsagePoller();

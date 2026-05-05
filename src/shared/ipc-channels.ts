@@ -5,6 +5,7 @@ export const IPC_INTERNAL_CHANNELS = {
 export const IPC_INVOKE_CHANNELS = {
   AUTH_LOGIN: "auth:login",
   AUTH_LOGOUT: "auth:logout",
+  AUTH_LOGOUT_EVERYWHERE: "auth:logoutEverywhere",
   AUTH_CHECK_SESSION: "auth:checkSession",
   USAGE_GET_CURRENT: "usage:getCurrent",
   POLLER_START: "poller:start",
@@ -19,8 +20,6 @@ export const IPC_INVOKE_CHANNELS = {
   BROWSER_RESET_PREFERENCE: "browser:resetPreference",
   BROWSER_GET_PREFERENCE: "browser:getPreference",
   RESIZE_WINDOW: "resize-window",
-  MOVE_WINDOW: "move-window",
-  GET_WINDOW_POSITION: "get-window-position",
   WINDOW_GET_PINNED: "window:getPinned",
   WINDOW_SET_PINNED: "window:setPinned",
   SET_IGNORE_MOUSE_EVENTS: "set-ignore-mouse-events",
@@ -28,7 +27,6 @@ export const IPC_INVOKE_CHANNELS = {
 } as const;
 
 export const IPC_SEND_CHANNELS = {
-  MOVE_WINDOW_FIRE: "move-window-fire",
   SET_IGNORE_MOUSE_EVENTS: "set-ignore-mouse-events",
 } as const;
 
