@@ -17,6 +17,7 @@ const FALLBACK_ALLOWED_CHANNELS = {
     // Auth channels
     "auth:login",
     "auth:logout",
+    "auth:logoutEverywhere",
     "auth:checkSession",
     // Usage channels
     "usage:getCurrent",
@@ -37,8 +38,6 @@ const FALLBACK_ALLOWED_CHANNELS = {
     "browser:getPreference",
     // Window channels
     "resize-window",
-    "move-window",
-    "get-window-position",
     "window:getPinned",
     "window:setPinned",
     // Transparent hit-test passthrough
@@ -46,7 +45,7 @@ const FALLBACK_ALLOWED_CHANNELS = {
     // Context menu
     "menu:showContextMenu",
   ],
-  send: ["move-window-fire", "set-ignore-mouse-events"],
+  send: ["set-ignore-mouse-events"],
   on: [
     // Usage updates
     "usage:updated",

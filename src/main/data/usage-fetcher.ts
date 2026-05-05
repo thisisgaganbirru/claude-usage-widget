@@ -372,6 +372,7 @@ function extractFromUsageEndpoint(json: unknown): UsageData | null {
     parseDateOrNull(sevenDayReset) ?? getDefaultResetTime();
 
   return {
+    provider: "claude",
     currentUsage: fiveHourUtil,
     planLimit: 100,
     percentageUsed: fiveHourUtil,
@@ -428,6 +429,7 @@ function extractFromJsonObject(json: unknown): UsageData | null {
     null;
 
   return {
+    provider: "claude",
     currentUsage: usedVal,
     planLimit: limit,
     percentageUsed: (usedVal / limit) * 100,

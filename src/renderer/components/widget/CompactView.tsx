@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useUsageData } from "@renderer/hooks/useUsageData";
 import { WidgetHeader, SizeOption } from "./WidgetHeader";
 import { Footer } from "./Footer";
+import { AlertBanner } from "./AlertBanner";
 
 function formatSessionReset(resetTime: Date): string {
   const diff = resetTime.getTime() - Date.now();
@@ -85,14 +86,24 @@ export function CompactView({
   isPinned,
   onTogglePin,
   onLogout,
+  onHardLogout,
   onRemove,
+  alertMessage,
+  onAlertIgnore,
+  onAlertHoverStart,
+  onAlertHoverEnd,
 }: {
   selectedSize: SizeOption;
   onSizeChange: (s: SizeOption) => void;
   isPinned?: boolean;
   onTogglePin?: (pinned: boolean) => void;
   onLogout?: () => void;
+  onHardLogout?: () => void;
   onRemove?: () => void;
+  alertMessage?: string | null;
+  onAlertIgnore?: () => void;
+  onAlertHoverStart?: () => void;
+  onAlertHoverEnd?: () => void;
 }): React.ReactElement {
   const { usageData, lastUpdated } = useUsageData();
   const [countdown, setCountdown] = useState("0d 00:00:00");
@@ -154,7 +165,16 @@ export function CompactView({
       <div
         data-widget-card
         className="flex w-full flex-col overflow-visible rounded-2xl border border-white/10 bg-[rgba(24,24,27,0.97)] shadow-[0_8px_32px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.04)]"
+        onMouseEnter={onAlertHoverStart}
+        onMouseLeave={onAlertHoverEnd}
       >
+        {alertMessage ? (
+          <AlertBanner
+            message={alertMessage}
+            className="rounded-t-2xl"
+            onIgnore={onAlertIgnore}
+          />
+        ) : null}
         <WidgetHeader
           planType={usageData.planType}
           userName={usageData.userName}
@@ -163,6 +183,7 @@ export function CompactView({
           onTogglePin={onTogglePin}
           onSizeChange={onSizeChange}
           onLogout={onLogout}
+          onHardLogout={onHardLogout}
           onRemove={onRemove}
         />
 

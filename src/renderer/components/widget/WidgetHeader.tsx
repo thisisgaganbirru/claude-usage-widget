@@ -12,6 +12,7 @@ interface WidgetHeaderProps {
   onTogglePin?: (pinned: boolean) => void;
   onSizeChange?: (size: SizeOption) => void;
   onLogout?: () => void;
+  onHardLogout?: () => void;
   onRemove?: () => void;
 }
 
@@ -23,6 +24,7 @@ export function WidgetHeader({
   onTogglePin,
   onSizeChange,
   onLogout,
+  onHardLogout,
   onRemove,
 }: WidgetHeaderProps): React.ReactElement {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -96,6 +98,7 @@ export function WidgetHeader({
           selectedSize={selectedSize}
           onSizeChange={onSizeChange}
           onLogout={onLogout}
+          onHardLogout={onHardLogout}
           onRemove={onRemove}
           onClose={() => setMenuOpen(false)}
         />

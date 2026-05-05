@@ -1,4 +1,12 @@
-import { app, ipcMain, BrowserWindow, Menu, shell } from "electron";
+import {
+  app,
+  ipcMain,
+  BrowserWindow,
+  Menu,
+  Notification,
+  globalShortcut,
+  shell,
+} from "electron";
 import isDev from "electron-is-dev";
 import { UsagePoller } from "@main/data/usage-poller";
 import { openLoginWindow } from "@main/auth/login-window";
@@ -19,8 +27,71 @@ import {
   IPC_INVOKE_CHANNELS,
   IPC_ON_CHANNELS,
 } from "@shared/ipc-channels";
+import { ThresholdCrossedEvent } from "@shared/types";
 
 let usagePoller: UsagePoller | null = null;
+let registeredQuickEntryShortcut: string | null = null;
+let isWillQuitCleanupHooked = false;
+
+function registerQuickEntryShortcut(
+  shortcut: string,
+  mainWindow: BrowserWindow,
+): void {
+  const normalized = shortcut.trim();
+  if (!normalized) return;
+
+  if (
+    registeredQuickEntryShortcut &&
+    registeredQuickEntryShortcut !== normalized &&
+    globalShortcut.isRegistered(registeredQuickEntryShortcut)
+  ) {
+    globalShortcut.unregister(registeredQuickEntryShortcut);
+    registeredQuickEntryShortcut = null;
+  }
+
+  if (
+    registeredQuickEntryShortcut === normalized &&
+    globalShortcut.isRegistered(normalized)
+  ) {
+    return;
+  }
+
+  const ok = globalShortcut.register(normalized, () => {
+    if (mainWindow.isDestroyed()) return;
+    mainWindow.show();
+    mainWindow.focus();
+  });
+
+  if (ok) {
+    registeredQuickEntryShortcut = normalized;
+  } else {
+    console.warn(
+      `[Settings] Failed to register quick-entry shortcut: ${normalized}`,
+    );
+  }
+}
+
+export function cleanupGlobalShortcuts(): void {
+  globalShortcut.unregisterAll();
+  registeredQuickEntryShortcut = null;
+}
+
+function showThresholdNotification(event: ThresholdCrossedEvent): void {
+  if (!Notification.isSupported()) return;
+
+  const roundedUsage = Math.round(event.percentage);
+  const body =
+    event.scope === "weekly"
+      ? `Your weekly limit crossed ${event.threshold}%. Use wisely.`
+      : `Current session usage reached ${roundedUsage}% (alert threshold ${event.threshold}%).`;
+
+  const notification = new Notification({
+    title: "Claude Usage Alert",
+    body,
+    silent: false,
+  });
+  notification.show();
+}
 
 /**
  * Register all IPC event handlers
@@ -30,6 +101,13 @@ export function registerIPCHandlers(
   poller: UsagePoller,
 ): void {
   usagePoller = poller;
+  const initialSettings = SettingsManager.get();
+  registerQuickEntryShortcut(initialSettings.quickEntryShortcut, mainWindow);
+
+  if (!isWillQuitCleanupHooked) {
+    app.on("will-quit", () => cleanupGlobalShortcuts());
+    isWillQuitCleanupHooked = true;
+  }
 
   ipcMain.handle(IPC_INTERNAL_CHANNELS.GET_CHANNELS, () => IPC_CHANNELS);
 
@@ -55,7 +133,14 @@ export function registerIPCHandlers(
       mainWindow.moveTop();
     }
 
-    if (!result.success) return { success: false, isAuthenticated: false };
+    if (!result.success) {
+      return {
+        success: false,
+        isAuthenticated: false,
+        reason: result.reason ?? "login_failed",
+        message: result.message ?? "Login did not complete.",
+      };
+    }
 
     // Login succeeded — session cookie captured and saved by loginWindow.
     // Start the poller; it will fetch usage data on its own schedule.
@@ -67,10 +152,25 @@ export function registerIPCHandlers(
   });
 
   /**
-   * Auth: Logout
+   * Auth: Soft logout (keeps browser cookies/session alive)
    */
   ipcMain.handle(IPC_INVOKE_CHANNELS.AUTH_LOGOUT, async () => {
     if (isDev) console.log(`[IPC] ${IPC_INVOKE_CHANNELS.AUTH_LOGOUT} requested`);
+    clearSession();
+    clearOrgIdCache();
+    usagePoller?.stop();
+    return { success: true };
+  });
+
+  /**
+   * Auth: Hard logout (clear persisted session + browser cookies)
+   */
+  ipcMain.handle(IPC_INVOKE_CHANNELS.AUTH_LOGOUT_EVERYWHERE, async () => {
+    if (isDev) {
+      console.log(
+        `[IPC] ${IPC_INVOKE_CHANNELS.AUTH_LOGOUT_EVERYWHERE} requested`,
+      );
+    }
     clearSession();
     clearOrgIdCache();
     await clearSessionCookies();
@@ -163,6 +263,14 @@ export function registerIPCHandlers(
     if (settings.pollingInterval && usagePoller) {
       usagePoller.setPollingInterval(updated.pollingInterval);
     }
+    if (typeof settings.quickEntryShortcut === "string") {
+      registerQuickEntryShortcut(updated.quickEntryShortcut, mainWindow);
+    }
+    app.setLoginItemSettings({
+      openAtLogin: updated.startOnBoot,
+      openAsHidden: true,
+      name: "Claude Usage Widget",
+    });
     return { success: true, settings: updated };
   });
 
@@ -247,12 +355,18 @@ export function registerIPCHandlers(
       mainWindow.webContents.send(IPC_ON_CHANNELS.USAGE_UPDATED, { usageData });
     });
 
-    usagePoller.on("thresholdCrossed", (event) => {
-      mainWindow.webContents.send(IPC_ON_CHANNELS.NOTIFICATION_THRESHOLD, event);
+    usagePoller.on("thresholdCrossed", (event: ThresholdCrossedEvent) => {
+      const settings = SettingsManager.get();
+      if (settings.enableBannerNotifications) {
+        mainWindow.webContents.send(IPC_ON_CHANNELS.NOTIFICATION_THRESHOLD, event);
+      }
+      if (settings.enableDesktopNotifications) {
+        showThresholdNotification(event);
+      }
     });
 
-    usagePoller.on("authExpired", () => {
-      mainWindow.webContents.send(IPC_ON_CHANNELS.AUTH_EXPIRED);
+    usagePoller.on("authExpired", (event) => {
+      mainWindow.webContents.send(IPC_ON_CHANNELS.AUTH_EXPIRED, event);
     });
 
     usagePoller.on("pollError", (error) => {

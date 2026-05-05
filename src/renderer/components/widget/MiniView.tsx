@@ -2,6 +2,7 @@ import React from "react";
 import { useUsageData } from "@renderer/hooks/useUsageData";
 import { WidgetHeader, SizeOption } from "./WidgetHeader";
 import { Footer } from "./Footer";
+import { AlertBanner } from "./AlertBanner";
 
 function formatSessionReset(resetTime: Date): string {
   const diff = resetTime.getTime() - Date.now();
@@ -47,14 +48,24 @@ export function MiniView({
   isPinned,
   onTogglePin,
   onLogout,
+  onHardLogout,
   onRemove,
+  alertMessage,
+  onAlertIgnore,
+  onAlertHoverStart,
+  onAlertHoverEnd,
 }: {
   selectedSize: SizeOption;
   onSizeChange: (s: SizeOption) => void;
   isPinned?: boolean;
   onTogglePin?: (pinned: boolean) => void;
   onLogout?: () => void;
+  onHardLogout?: () => void;
   onRemove?: () => void;
+  alertMessage?: string | null;
+  onAlertIgnore?: () => void;
+  onAlertHoverStart?: () => void;
+  onAlertHoverEnd?: () => void;
 }): React.ReactElement {
   const { usageData, isLoading, lastUpdated } = useUsageData();
 
@@ -79,7 +90,16 @@ export function MiniView({
       <div
         data-widget-card
         className="flex flex-col overflow-visible rounded-[14px] border border-white/10 bg-[rgba(24,24,27,0.97)]"
+        onMouseEnter={onAlertHoverStart}
+        onMouseLeave={onAlertHoverEnd}
       >
+        {alertMessage ? (
+          <AlertBanner
+            message={alertMessage}
+            className="rounded-t-[14px]"
+            onIgnore={onAlertIgnore}
+          />
+        ) : null}
         <WidgetHeader
           planType={usageData.planType}
           userName={usageData.userName}
@@ -88,6 +108,7 @@ export function MiniView({
           onTogglePin={onTogglePin}
           onSizeChange={onSizeChange}
           onLogout={onLogout}
+          onHardLogout={onHardLogout}
           onRemove={onRemove}
         />
 

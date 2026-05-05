@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useUsageStore, UsageStoreState } from "@renderer/store/usage-store";
 import { useAuthStore } from "@renderer/store/auth-store";
-import { UsageData } from "@shared/types";
+import { AuthExpiredEvent, UsageData } from "@shared/types";
 
 const isDev = process.env.NODE_ENV === "development";
 
@@ -42,10 +42,10 @@ export function useUsageData(): UsageStoreState {
     };
 
     // Listen for auth expiration
-    const handleAuthExpired = () => {
-      console.warn("[useUsageData] Auth expired");
+    const handleAuthExpired = (event?: AuthExpiredEvent) => {
+      console.warn("[useUsageData] Auth expired", event);
       clearAuth();
-      setError("Session expired. Please log in again.");
+      setError(event?.message ?? "Session expired. Please log in again.");
     };
 
     // Register listeners

@@ -16,13 +16,6 @@ a,
   -webkit-app-region: no-drag;
 }
 
-/* Spans inside a drag region should not block dragging */
-.widget-drag span,
-.widget-drag img {
-  -webkit-app-region: drag;
-  pointer-events: none;
-}
-
 body {
   margin: 0;
   padding: 0;
@@ -35,14 +28,8 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Only the widget-drag class enables dragging — applied to the header bar */
 .widget-drag {
   -webkit-app-region: drag;
-  cursor: grab;
-}
-
-.widget-drag:active {
-  cursor: grabbing;
 }
 
 /* Buttons inside the drag region must stay clickable */
@@ -83,4 +70,24 @@ body {
 
 .dark ::-webkit-scrollbar-thumb:hover {
   background: #64748b;
+}
+
+/* Brief blinking burst at the start of every 2-minute cycle */
+@keyframes threshold-alert-blink {
+  0%,
+  0.8%,
+  1.6%,
+  2.4%,
+  100% {
+    opacity: 1;
+  }
+  0.4%,
+  1.2%,
+  2% {
+    opacity: 0.35;
+  }
+}
+
+.threshold-alert-blink {
+  animation: threshold-alert-blink 120s linear infinite;
 }

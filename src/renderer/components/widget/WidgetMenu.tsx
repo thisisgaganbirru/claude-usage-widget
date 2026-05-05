@@ -7,6 +7,7 @@ interface WidgetMenuProps {
   selectedSize: SizeOption;
   onSizeChange?: (size: SizeOption) => void;
   onLogout?: () => void;
+  onHardLogout?: () => void;
   onRemove?: () => void;
   onClose: () => void;
 }
@@ -17,6 +18,7 @@ export function WidgetMenu({
   selectedSize,
   onSizeChange,
   onLogout,
+  onHardLogout,
   onRemove,
   onClose,
 }: WidgetMenuProps): React.ReactElement | null {
@@ -121,6 +123,36 @@ export function WidgetMenu({
             <line x1="21" y1="12" x2="9" y2="12" />
           </svg>
           Sign Out
+        </button>
+
+        <button
+          onClick={() => {
+            onHardLogout?.();
+            onClose();
+          }}
+          onMouseEnter={() => setHoveredItem("logout_everywhere")}
+          onMouseLeave={() => setHoveredItem(null)}
+          className={`flex w-full cursor-pointer items-center gap-[9px] border-0 px-3 py-[7px] text-left text-[12px] transition-colors ${
+            hoveredItem === "logout_everywhere"
+              ? "bg-orange-500/10 text-orange-400"
+              : "bg-transparent text-white/50"
+          }`}
+        >
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M4 4h16v16H4z" />
+            <path d="M9 9l6 6" />
+            <path d="M15 9l-6 6" />
+          </svg>
+          Sign out everywhere
         </button>
 
         {/* Divider */}
