@@ -1,78 +1,146 @@
 import { create } from "zustand";
-import { UsageData } from "@shared/types";
+import { ProviderType, UsageData } from "@shared/types";
 
 export interface UsageStoreState {
-  usageData: UsageData | null;
-  isLoading: boolean;
-  error: string | null;
-  lastUpdated: Date | null;
-
-  setUsageData: (data: UsageData | null) => void;
-  setLoading: (loading: boolean) => void;
-  setError: (error: string | null) => void;
-  setLastUpdated: (date: Date | null) => void;
-  fetchCurrent: () => Promise<void>;
-  reset: () => void;
+  usageByProvider: Partial<Record<ProviderType, UsageData>>;
+  lastUpdatedByProvider: Partial<Record<ProviderType, Date>>;
+  isLoadingByProvider: Record<ProviderType, boolean>;
+  errorByProvider: Partial<Record<ProviderType, string>>;
+  setUsageData: (provider: ProviderType, data: UsageData | null) => void;
+  setLoading: (provider: ProviderType, loading: boolean) => void;
+  setError: (provider: ProviderType, error: string | null) => void;
+  setLastUpdated: (provider: ProviderType, date: Date | null) => void;
+  fetchCurrent: (provider: ProviderType) => Promise<void>;
+  reset: (provider?: ProviderType) => void;
 }
 
-const defaultUsageData: UsageData = {
-  currentUsage: 0,
-  planLimit: 100,
-  percentageUsed: 0,
-  resetTime: new Date(Date.now() + 86400000),
-  sevenDayUsage: 0,
-  sevenDayResetTime: new Date(Date.now() + 7 * 86400000),
-  sessionActive: false,
-  opusUsage: null,
-  sonnetUsage: null,
-  planType: "Unknown",
-  modelInfo: "Unknown",
-  userName: "Claude User",
-  timestamp: new Date(),
-};
+function createDefaultUsageData(provider: ProviderType): UsageData {
+  return {
+    provider,
+    currentUsage: 0,
+    planLimit: 100,
+    percentageUsed: 0,
+    resetTime: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    sevenDayUsage: 0,
+    sevenDayResetTime: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    sessionActive: false,
+    opusUsage: null,
+    sonnetUsage: null,
+    planType: "Unknown",
+    modelInfo: "Unknown",
+    userName: provider === "chatgpt" ? "ChatGPT User" : "Claude User",
+    timestamp: new Date(),
+  };
+}
+
+function normalizeUsageData(provider: ProviderType, raw: UsageData): UsageData {
+  return {
+    ...raw,
+    provider,
+    resetTime: raw.resetTime ? new Date(raw.resetTime) : null,
+    sevenDayResetTime: new Date(raw.sevenDayResetTime),
+    timestamp: new Date(raw.timestamp),
+  };
+}
 
 export const useUsageStore = create<UsageStoreState>((set, get) => ({
-  usageData: null,
-  isLoading: false,
-  error: null,
-  lastUpdated: null,
+  usageByProvider: {},
+  lastUpdatedByProvider: {},
+  isLoadingByProvider: { claude: false, chatgpt: false },
+  errorByProvider: {},
 
-  setUsageData: (data) => set({ usageData: data, error: null }),
+  setUsageData: (provider, data) => {
+    set((state) => {
+      const nextUsage = { ...state.usageByProvider };
+      if (data) nextUsage[provider] = data;
+      else delete nextUsage[provider];
+      return {
+        usageByProvider: nextUsage,
+        errorByProvider: { ...state.errorByProvider, [provider]: undefined },
+      };
+    });
+  },
 
-  setLoading: (loading) => set({ isLoading: loading }),
+  setLoading: (provider, loading) => {
+    set((state) => ({
+      isLoadingByProvider: { ...state.isLoadingByProvider, [provider]: loading },
+    }));
+  },
 
-  setError: (error) => set({ error }),
+  setError: (provider, error) => {
+    set((state) => ({
+      errorByProvider: { ...state.errorByProvider, [provider]: error ?? undefined },
+    }));
+  },
 
-  setLastUpdated: (date) => set({ lastUpdated: date }),
+  setLastUpdated: (provider, date) => {
+    set((state) => ({
+      lastUpdatedByProvider: {
+        ...state.lastUpdatedByProvider,
+        [provider]: date ?? undefined,
+      },
+    }));
+  },
 
-  fetchCurrent: async () => {
-    set({ isLoading: true, error: null });
+  fetchCurrent: async (provider) => {
+    get().setLoading(provider, true);
+    get().setError(provider, null);
     try {
-      const result =
-        await window.electron.ipcRenderer.invoke("usage:getCurrent");
+      const result = await window.electron.ipcRenderer.invoke(
+        "usage:getCurrent",
+        provider,
+      );
       if (result?.usageData) {
-        // Convert date strings to Date objects
-        const usageData = {
-          ...result.usageData,
-          resetTime: new Date(result.usageData.resetTime),
-          timestamp: new Date(result.usageData.timestamp),
-        };
-        set({ usageData, lastUpdated: new Date(), isLoading: false });
+        const usageData = normalizeUsageData(provider, result.usageData as UsageData);
+        set((state) => ({
+          usageByProvider: { ...state.usageByProvider, [provider]: usageData },
+          lastUpdatedByProvider: {
+            ...state.lastUpdatedByProvider,
+            [provider]: new Date(),
+          },
+          isLoadingByProvider: { ...state.isLoadingByProvider, [provider]: false },
+          errorByProvider: { ...state.errorByProvider, [provider]: undefined },
+        }));
       } else {
-        set({ usageData: defaultUsageData, isLoading: false });
+        const fallback = createDefaultUsageData(provider);
+        set((state) => ({
+          usageByProvider: { ...state.usageByProvider, [provider]: fallback },
+          isLoadingByProvider: { ...state.isLoadingByProvider, [provider]: false },
+        }));
       }
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Failed to fetch usage data";
-      set({ error: errorMessage, isLoading: false });
+      set((state) => ({
+        errorByProvider: { ...state.errorByProvider, [provider]: errorMessage },
+        isLoadingByProvider: { ...state.isLoadingByProvider, [provider]: false },
+      }));
     }
   },
 
-  reset: () =>
-    set({
-      usageData: null,
-      isLoading: false,
-      error: null,
-      lastUpdated: null,
-    }),
+  reset: (provider) => {
+    if (!provider) {
+      set({
+        usageByProvider: {},
+        lastUpdatedByProvider: {},
+        isLoadingByProvider: { claude: false, chatgpt: false },
+        errorByProvider: {},
+      });
+      return;
+    }
+
+    set((state) => {
+      const usageByProvider = { ...state.usageByProvider };
+      delete usageByProvider[provider];
+      return {
+        usageByProvider,
+        lastUpdatedByProvider: {
+          ...state.lastUpdatedByProvider,
+          [provider]: undefined,
+        },
+        isLoadingByProvider: { ...state.isLoadingByProvider, [provider]: false },
+        errorByProvider: { ...state.errorByProvider, [provider]: undefined },
+      };
+    });
+  },
 }));

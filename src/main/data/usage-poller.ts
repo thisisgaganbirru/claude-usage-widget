@@ -1,155 +1,173 @@
 import { EventEmitter } from "events";
 import isDev from "electron-is-dev";
-import { UsageData } from "@shared/types";
+import { AuthExpiredEvent, ProviderType, ThresholdCrossedEvent, UsageData } from "@shared/types";
 import { fetchUsageData } from "./usage-fetcher";
 import { SessionManager } from "@main/auth/session-manager";
 
+const DEFAULT_SESSION_THRESHOLDS = [50, 75, 90, 95];
+const DEFAULT_WEEKLY_THRESHOLDS = [50, 75, 90, 100];
+
 export class UsagePoller extends EventEmitter {
   private pollingInterval: ReturnType<typeof setInterval> | null = null;
-  private pollDuration: number = 60000; // 60 seconds default
+  private pollDuration: number = 60000;
   private isPolling: boolean = false;
-  private lastUsageData: UsageData | null = null;
-  private notifiedThresholds: Set<number> = new Set();
+  private activeProvider: ProviderType = "claude";
+  private lastUsageDataByProvider: Partial<Record<ProviderType, UsageData>> = {};
+  private notifiedSessionThresholdsByProvider: Record<ProviderType, Set<number>> = {
+    claude: new Set(),
+    chatgpt: new Set(),
+  };
+  private notifiedWeeklyThresholdsByProvider: Record<ProviderType, Set<number>> = {
+    claude: new Set(),
+    chatgpt: new Set(),
+  };
 
   constructor(pollDurationSeconds: number = 60) {
     super();
     this.pollDuration = pollDurationSeconds * 1000;
   }
 
-  /**
-   * Start polling for usage data
-   */
-  start(): void {
+  setProvider(provider: ProviderType): void {
+    this.activeProvider = provider;
+    if (isDev) console.log(`[UsagePoller] Active provider set to ${provider}`);
+  }
+
+  getProvider(): ProviderType {
+    return this.activeProvider;
+  }
+
+  start(provider?: ProviderType): void {
+    if (provider) this.setProvider(provider);
     if (this.isPolling) {
-      console.warn("[UsagePoller] Polling already in progress");
+      if (isDev) console.log("[UsagePoller] Polling already in progress");
       return;
     }
 
-    if (isDev) console.log(
-      `[UsagePoller] Starting polling (interval: ${this.pollDuration}ms)`,
-    );
-    this.isPolling = true;
-
-    // Poll immediately first, then set interval
-    this.poll();
-    this.pollingInterval = setInterval(() => this.poll(), this.pollDuration);
-  }
-
-  /**
-   * Stop polling
-   */
-  stop(): void {
-    if (this.pollingInterval) {
-      if (isDev) console.log("[UsagePoller] Stopping polling");
-      clearInterval(this.pollingInterval);
-      this.pollingInterval = null;
-      this.isPolling = false;
-      this.notifiedThresholds.clear();
-    }
-  }
-
-  /**
-   * Set polling interval
-   */
-  setPollingInterval(seconds: number): void {
-    if (seconds < 30 || seconds > 300) {
-      console.warn(
-        "[UsagePoller] Invalid polling interval. Must be between 30-300 seconds",
+    if (isDev) {
+      console.log(
+        `[UsagePoller] Starting polling for ${this.activeProvider} (interval ${this.pollDuration}ms)`,
       );
+    }
+    this.isPolling = true;
+    void this.poll();
+    this.pollingInterval = setInterval(() => {
+      void this.poll();
+    }, this.pollDuration);
+  }
+
+  stop(): void {
+    if (!this.pollingInterval) {
+      this.isPolling = false;
       return;
     }
+    clearInterval(this.pollingInterval);
+    this.pollingInterval = null;
+    this.isPolling = false;
+  }
 
+  setPollingInterval(seconds: number): void {
+    if (seconds < 30 || seconds > 300) return;
     const wasPolling = this.isPolling;
     if (wasPolling) this.stop();
-
     this.pollDuration = seconds * 1000;
     if (wasPolling) this.start();
-
-    if (isDev) console.log(`[UsagePoller] Polling interval updated to ${seconds}s`);
   }
 
-  /**
-   * Trigger a one-off refresh outside the scheduled interval.
-   */
-  async refreshNow(): Promise<void> {
+  async refreshNow(provider?: ProviderType): Promise<void> {
+    if (provider) this.setProvider(provider);
     await this.poll();
   }
 
-  /**
-   * Execute a single poll
-   */
   private async poll(): Promise<void> {
+    const provider = this.activeProvider;
     try {
-      const sessionCookie = SessionManager.getSessionCookie();
-
+      const sessionCookie = SessionManager.getSessionCookie(provider);
       if (!sessionCookie) {
-        this.emit("authExpired");
+        const event: AuthExpiredEvent = {
+          provider,
+          reason: "missing_session",
+          message: `No saved ${provider} session token was found.`,
+        };
+        this.emit("authExpired", event);
         this.stop();
         return;
       }
 
-      const usageData = await fetchUsageData(sessionCookie);
-      this.lastUsageData = usageData;
+      const usageData = await fetchUsageData(sessionCookie, provider);
+      this.lastUsageDataByProvider[provider] = usageData;
       this.emit("usageUpdate", usageData);
       this.checkThresholds(usageData);
-
-      if (isDev) console.log(
-        `[UsagePoller] Usage: ${usageData.currentUsage}/${usageData.planLimit} (${usageData.percentageUsed.toFixed(1)}%)`,
-      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-
-      // Auth errors mean the session expired on Anthropic's side — not just a network blip.
-      // Clear local session and stop polling so the renderer shows LoginView.
       if (
         message.includes("401") ||
         message.includes("403") ||
         message.includes("Authentication failed")
       ) {
-        console.warn(
-          "[UsagePoller] Auth error — session expired on server. Clearing and stopping.",
-        );
-        SessionManager.clearSession();
-        this.emit("authExpired");
+        SessionManager.clearSession(provider);
+        const event: AuthExpiredEvent = {
+          provider,
+          reason: "server_auth_failed",
+          message:
+            provider === "chatgpt"
+              ? "Session expired on ChatGPT. Please log in again."
+              : "Session expired on Claude.ai. Please log in again.",
+        };
+        this.emit("authExpired", event);
         this.stop();
         return;
       }
 
-      console.error("[UsagePoller] Poll failed:", message);
-      this.emit("pollError", error);
+      this.emit("pollError", new Error(message));
     }
   }
 
-  /**
-   * Check if usage has crossed notification thresholds
-   */
   private checkThresholds(usageData: UsageData): void {
-    const thresholds = [50, 75, 90, 95];
-    const percentage = usageData.percentageUsed;
+    const provider = usageData.provider;
+    const sessionNotified = this.notifiedSessionThresholdsByProvider[provider];
+    const weeklyNotified = this.notifiedWeeklyThresholdsByProvider[provider];
+    const sessionPct = usageData.percentageUsed;
+    const weeklyPct = usageData.sevenDayUsage;
 
-    for (const threshold of thresholds) {
-      if (percentage >= threshold && !this.notifiedThresholds.has(threshold)) {
-        this.notifiedThresholds.add(threshold);
-        this.emit("thresholdCrossed", { threshold, percentage, usageData });
+    for (const threshold of DEFAULT_SESSION_THRESHOLDS) {
+      if (sessionPct >= threshold && !sessionNotified.has(threshold)) {
+        sessionNotified.add(threshold);
+        const event: ThresholdCrossedEvent = {
+          provider,
+          threshold,
+          percentage: sessionPct,
+          scope: "session",
+          usageData,
+        };
+        this.emit("thresholdCrossed", event);
       }
     }
+    if (sessionPct < DEFAULT_SESSION_THRESHOLDS[0]) {
+      sessionNotified.clear();
+    }
 
-    // Reset thresholds if usage dropped below 50% (new cycle)
-    if (percentage < 50) {
-      this.notifiedThresholds.clear();
+    for (const threshold of DEFAULT_WEEKLY_THRESHOLDS) {
+      if (weeklyPct >= threshold && !weeklyNotified.has(threshold)) {
+        weeklyNotified.add(threshold);
+        const event: ThresholdCrossedEvent = {
+          provider,
+          threshold,
+          percentage: weeklyPct,
+          scope: "weekly",
+          usageData,
+        };
+        this.emit("thresholdCrossed", event);
+      }
+    }
+    if (weeklyPct < DEFAULT_WEEKLY_THRESHOLDS[0]) {
+      weeklyNotified.clear();
     }
   }
 
-  /**
-   * Get current usage data
-   */
-  getLastUsageData(): UsageData | null {
-    return this.lastUsageData;
+  getLastUsageData(provider: ProviderType): UsageData | null {
+    return this.lastUsageDataByProvider[provider] ?? null;
   }
 
-  /**
-   * Check if currently polling
-   */
   isActive(): boolean {
     return this.isPolling;
   }

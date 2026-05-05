@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useUsageData } from "@renderer/hooks/useUsageData";
 import { WidgetHeader, SizeOption } from "./WidgetHeader";
 import { Footer } from "./Footer";
+import { ProviderType } from "@shared/types";
 
 function formatSessionReset(resetTime: Date): string {
   const diff = resetTime.getTime() - Date.now();
@@ -80,6 +81,8 @@ function StackedBar({
 }
 
 export function CompactView({
+  provider,
+  onProviderChange,
   selectedSize,
   onSizeChange,
   isPinned,
@@ -87,6 +90,8 @@ export function CompactView({
   onLogout,
   onRemove,
 }: {
+  provider: ProviderType;
+  onProviderChange: (provider: ProviderType) => void;
   selectedSize: SizeOption;
   onSizeChange: (s: SizeOption) => void;
   isPinned?: boolean;
@@ -94,7 +99,7 @@ export function CompactView({
   onLogout?: () => void;
   onRemove?: () => void;
 }): React.ReactElement {
-  const { usageData, lastUpdated } = useUsageData();
+  const { usageData, lastUpdated } = useUsageData(provider);
   const [countdown, setCountdown] = useState("0d 00:00:00");
 
   useEffect(() => {
@@ -143,11 +148,18 @@ export function CompactView({
           ? "text-[#C15F3C]"
           : "text-red-500";
 
-  const models = [
-    { name: "Opus", used: opusPct, dotClass: "bg-[#C15F3C]" },
-    { name: "Sonnet", used: sonnetPct, dotClass: "bg-[#6b9eff]" },
-    { name: "Haiku", used: haikuPct, dotClass: "bg-emerald-500" },
-  ];
+  const models =
+    provider === "chatgpt"
+      ? [
+          { name: "GPT-5", used: opusPct, dotClass: "bg-[#C15F3C]" },
+          { name: "GPT-4.1", used: sonnetPct, dotClass: "bg-[#6b9eff]" },
+          { name: "Other", used: haikuPct, dotClass: "bg-emerald-500" },
+        ]
+      : [
+          { name: "Opus", used: opusPct, dotClass: "bg-[#C15F3C]" },
+          { name: "Sonnet", used: sonnetPct, dotClass: "bg-[#6b9eff]" },
+          { name: "Haiku", used: haikuPct, dotClass: "bg-emerald-500" },
+        ];
 
   return (
     <div className="h-auto bg-transparent p-2">
@@ -156,6 +168,8 @@ export function CompactView({
         className="flex w-full flex-col overflow-visible rounded-2xl border border-white/10 bg-[rgba(24,24,27,0.97)] shadow-[0_8px_32px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.04)]"
       >
         <WidgetHeader
+          provider={provider}
+          onProviderChange={onProviderChange}
           planType={usageData.planType}
           userName={usageData.userName}
           selectedSize={selectedSize}
@@ -230,10 +244,11 @@ export function CompactView({
         </div>
 
         <Footer
+          provider={provider}
           lastUpdated={lastUpdated ? new Date(lastUpdated) : null}
           label={usageData.userName}
           onRefresh={() =>
-            (window as any).electron?.ipcRenderer?.invoke("poller:start")
+            (window as any).electron?.ipcRenderer?.invoke("poller:start", provider)
           }
         />
       </div>

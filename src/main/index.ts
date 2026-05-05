@@ -251,8 +251,10 @@ const app_ready = () => {
       trayManager?.updateIcon(usageData);
     });
 
-    if (SessionManager.isAuthenticated()) {
-      usagePoller.start();
+    if (SessionManager.isAuthenticated("claude")) {
+      usagePoller.start("claude");
+    } else if (SessionManager.isAuthenticated("chatgpt")) {
+      usagePoller.start("chatgpt");
     }
   } catch (err) {
     console.error("[Main] FATAL error in app_ready:", err);

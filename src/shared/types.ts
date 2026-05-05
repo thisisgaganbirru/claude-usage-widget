@@ -2,7 +2,10 @@
  * Shared TypeScript types across main and renderer processes
  */
 
+export type ProviderType = "claude" | "chatgpt";
+
 export interface UsageData {
+  provider: ProviderType;
   // 5-hour rolling window (current session)
   currentUsage: number; // five_hour.utilization (0-100 %)
   planLimit: number; // Always 100 (utilization is already %)
@@ -51,4 +54,20 @@ export interface WidgetSettings {
 export interface IpcMessage {
   channel: string;
   data?: any;
+}
+
+export type LoginFailureReason = "cancelled" | "token_missing" | "login_failed";
+
+export interface AuthExpiredEvent {
+  provider: ProviderType;
+  reason: "missing_session" | "server_auth_failed";
+  message: string;
+}
+
+export interface ThresholdCrossedEvent {
+  provider: ProviderType;
+  threshold: number;
+  percentage: number;
+  scope: "session" | "weekly";
+  usageData: UsageData;
 }

@@ -2,6 +2,7 @@ import React from "react";
 import { useUsageData } from "@renderer/hooks/useUsageData";
 import { WidgetHeader, SizeOption } from "./WidgetHeader";
 import { Footer } from "./Footer";
+import { ProviderType } from "@shared/types";
 
 function formatSessionReset(resetTime: Date): string {
   const diff = resetTime.getTime() - Date.now();
@@ -42,6 +43,8 @@ function ProgressBar({
 }
 
 export function MiniView({
+  provider,
+  onProviderChange,
   selectedSize,
   onSizeChange,
   isPinned,
@@ -49,6 +52,8 @@ export function MiniView({
   onLogout,
   onRemove,
 }: {
+  provider: ProviderType;
+  onProviderChange: (provider: ProviderType) => void;
   selectedSize: SizeOption;
   onSizeChange: (s: SizeOption) => void;
   isPinned?: boolean;
@@ -56,7 +61,7 @@ export function MiniView({
   onLogout?: () => void;
   onRemove?: () => void;
 }): React.ReactElement {
-  const { usageData, isLoading, lastUpdated } = useUsageData();
+  const { usageData, isLoading, lastUpdated } = useUsageData(provider);
 
   if (isLoading || !usageData) {
     return (
@@ -81,6 +86,8 @@ export function MiniView({
         className="flex flex-col overflow-visible rounded-[14px] border border-white/10 bg-[rgba(24,24,27,0.97)]"
       >
         <WidgetHeader
+          provider={provider}
+          onProviderChange={onProviderChange}
           planType={usageData.planType}
           userName={usageData.userName}
           selectedSize={selectedSize}
@@ -125,10 +132,11 @@ export function MiniView({
           <div className="-mx-3.5 my-1.5 h-px bg-white/10" />
 
           <Footer
+            provider={provider}
             lastUpdated={lastUpdated ?? usageData.timestamp ?? null}
             label={usageData.userName}
             onRefresh={() =>
-              (window as any).electron?.ipcRenderer?.invoke("poller:start")
+              (window as any).electron?.ipcRenderer?.invoke("poller:start", provider)
             }
             paddingClass="px-0 pb-0 pt-0.5"
             borderTopClass="border-0"

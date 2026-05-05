@@ -1,13 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { useAuthStore } from "@renderer/store/auth-store";
-import { useUsageStore } from "@renderer/store/usage-store";
 import { LoginView } from "@renderer/components/auth/LoginView";
 import { MiniView } from "@renderer/components/widget/MiniView";
 import { CompactView } from "@renderer/components/widget/CompactView";
 import { ExpandedView } from "@renderer/components/widget/ExpandedView";
 import { SizeOption } from "@renderer/components/widget/WidgetHeader";
-
-const isDev = process.env.NODE_ENV === "development";
+import { ProviderType } from "@shared/types";
 
 declare global {
   interface Window {
@@ -34,14 +32,29 @@ const WINDOW_SIZES: Record<SizeOption, [number, number]> = {
 };
 
 export const App = () => {
-  const { isAuthenticated, checkSession, setAuthenticated } = useAuthStore();
-  const fetchCurrent = useUsageStore((state) => state.fetchCurrent);
+  const {
+    selectedProvider,
+    setSelectedProvider,
+    isAuthenticated,
+    setAuthenticated,
+    checkSession,
+  } = useAuthStore();
   const [selectedSize, setSelectedSize] = useState<SizeOption>("Small");
   const [isPinned, setIsPinned] = useState(true);
 
+  const handleProviderChange = async (provider: ProviderType) => {
+    setSelectedProvider(provider);
+    const authed = await checkSession(provider);
+    if (authed) {
+      void window.electron.ipcRenderer.invoke("poller:start", provider);
+    }
+  };
+
   const handleLogout = async () => {
-    await window.electron.ipcRenderer.invoke("auth:logout").catch(() => {});
-    setAuthenticated(false);
+    await window.electron.ipcRenderer
+      .invoke("auth:logout", selectedProvider)
+      .catch(() => {});
+    setAuthenticated(false, selectedProvider);
   };
 
   const handleRemove = () => {
@@ -55,8 +68,6 @@ export const App = () => {
       .catch(() => {});
   };
 
-  // Toggle mouse passthrough: forward:true means mousemove still reaches renderer
-  // Only send IPC when state changes to avoid flooding
   useEffect(() => {
     const ipc = window.electron?.ipcRenderer;
     if (!ipc) return;
@@ -77,7 +88,6 @@ export const App = () => {
     return () => window.removeEventListener("mousemove", onMouseMove);
   }, []);
 
-  // Resize window based on auth state and selected size
   useEffect(() => {
     if (!isAuthenticated) {
       void window.electron.ipcRenderer
@@ -86,84 +96,57 @@ export const App = () => {
       return;
     }
     const [w, h] = WINDOW_SIZES[selectedSize];
-    void window.electron.ipcRenderer
-      .invoke("resize-window", w, h)
-      .catch((error) => {
-        console.error("[App] Failed to resize window:", error);
-      });
+    void window.electron.ipcRenderer.invoke("resize-window", w, h).catch(() => {});
   }, [selectedSize, isAuthenticated]);
 
   useEffect(() => {
-    void checkSession();
+    void Promise.all([checkSession("claude"), checkSession("chatgpt")]).then(
+      ([claudeAuthed, chatgptAuthed]) => {
+        const provider = claudeAuthed
+          ? "claude"
+          : chatgptAuthed
+            ? "chatgpt"
+            : "claude";
+        setSelectedProvider(provider);
+        if (claudeAuthed || chatgptAuthed) {
+          void window.electron.ipcRenderer.invoke("poller:start", provider);
+        }
+      },
+    );
+
     void window.electron.ipcRenderer
       .invoke("window:getPinned")
       .then((result) => {
         if (typeof result?.pinned === "boolean") setIsPinned(result.pinned);
       })
       .catch(() => {});
-
-    const handleLoginSuccess = () => setAuthenticated(true);
-    const handleRefreshNow = () => void fetchCurrent();
-    const handleOpenSettings = () => {
-      if (isDev) console.log("[App] Settings UI is not implemented yet");
-    };
-
-    window.electron.ipcRenderer.on("auth:login-success", handleLoginSuccess);
-    window.electron.ipcRenderer.on("action:refreshNow", handleRefreshNow);
-    window.electron.ipcRenderer.on("action:openSettings", handleOpenSettings);
-
-    return () => {
-      window.electron.ipcRenderer.removeListener(
-        "auth:login-success",
-        handleLoginSuccess,
-      );
-      window.electron.ipcRenderer.removeListener(
-        "action:refreshNow",
-        handleRefreshNow,
-      );
-      window.electron.ipcRenderer.removeListener(
-        "action:openSettings",
-        handleOpenSettings,
-      );
-    };
-  }, [checkSession, fetchCurrent, setAuthenticated]);
+  }, [checkSession, setSelectedProvider]);
 
   if (!isAuthenticated) {
-    return <LoginView />;
+    return (
+      <LoginView
+        selectedProvider={selectedProvider}
+        onProviderChange={handleProviderChange}
+      />
+    );
   }
 
+  const sharedProps = {
+    provider: selectedProvider,
+    onProviderChange: handleProviderChange,
+    selectedSize,
+    onSizeChange: setSelectedSize,
+    isPinned,
+    onTogglePin: handleTogglePin,
+    onLogout: handleLogout,
+    onRemove: handleRemove,
+  };
+
   if (selectedSize === "Medium") {
-    return (
-      <CompactView
-        selectedSize={selectedSize}
-        onSizeChange={setSelectedSize}
-        isPinned={isPinned}
-        onTogglePin={handleTogglePin}
-        onLogout={handleLogout}
-        onRemove={handleRemove}
-      />
-    );
+    return <CompactView {...sharedProps} />;
   }
   if (selectedSize === "Large") {
-    return (
-      <ExpandedView
-        selectedSize={selectedSize}
-        onSizeChange={setSelectedSize}
-        isPinned={isPinned}
-        onTogglePin={handleTogglePin}
-        onLogout={handleLogout}
-        onRemove={handleRemove}
-      />
-    );
+    return <ExpandedView {...sharedProps} />;
   }
-  return (
-    <MiniView
-      selectedSize={selectedSize}
-      onSizeChange={setSelectedSize}
-      isPinned={isPinned}
-      onTogglePin={handleTogglePin}
-      onLogout={handleLogout}
-      onRemove={handleRemove}
-    />
-  );
+  return <MiniView {...sharedProps} />;
 };

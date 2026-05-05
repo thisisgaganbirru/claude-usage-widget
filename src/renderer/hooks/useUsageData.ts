@@ -1,59 +1,62 @@
 import { useEffect } from "react";
-import { useUsageStore, UsageStoreState } from "@renderer/store/usage-store";
+import { useUsageStore } from "@renderer/store/usage-store";
 import { useAuthStore } from "@renderer/store/auth-store";
-import { UsageData } from "@shared/types";
+import { AuthExpiredEvent, ProviderType, UsageData } from "@shared/types";
 
 const isDev = process.env.NODE_ENV === "development";
 
-/**
- * Custom hook for listening to usage data updates from main process
- * Automatically sets up IPC listeners and handles updates
- */
-export function useUsageData(): UsageStoreState {
-  const { setUsageData, setLastUpdated, setError, fetchCurrent } =
-    useUsageStore();
+export interface ProviderUsageState {
+  usageData: UsageData | null;
+  isLoading: boolean;
+  error: string | null;
+  lastUpdated: Date | null;
+  fetchCurrent: () => Promise<void>;
+}
+
+function normalizeUsageData(raw: UsageData): UsageData {
+  return {
+    ...raw,
+    resetTime: raw.resetTime ? new Date(raw.resetTime) : null,
+    sevenDayResetTime: new Date(raw.sevenDayResetTime),
+    timestamp: new Date(raw.timestamp),
+  };
+}
+
+export function useUsageData(provider: ProviderType): ProviderUsageState {
+  const usageStore = useUsageStore();
   const clearAuth = useAuthStore((state) => state.clearAuth);
 
   useEffect(() => {
-    // Fetch current data immediately
-    fetchCurrent();
+    void usageStore.fetchCurrent(provider);
 
-    // Listen for usage updates from main process
     const handleUsageUpdate = (data: { usageData: UsageData }) => {
-      if (data?.usageData) {
-        // Convert date strings to Date objects
-        const usageData = {
-          ...data.usageData,
-          resetTime: data.usageData.resetTime
-            ? new Date(data.usageData.resetTime)
-            : null,
-          timestamp: new Date(data.usageData.timestamp),
-        };
-        setUsageData(usageData);
-        setLastUpdated(new Date());
-        if (isDev) console.log("[useUsageData] Usage updated:", usageData);
+      if (!data?.usageData || data.usageData.provider !== provider) return;
+      const usageData = normalizeUsageData(data.usageData);
+      usageStore.setUsageData(provider, usageData);
+      usageStore.setLastUpdated(provider, new Date());
+      if (isDev) {
+        console.log(`[useUsageData] ${provider} usage updated`, usageData);
       }
     };
 
-    // Listen for poll errors
-    const handlePollError = (data: { error: string }) => {
-      console.error("[useUsageData] Poll error:", data.error);
-      setError(data.error);
+    const handlePollError = (data: { provider?: ProviderType; error: string }) => {
+      if (data?.provider && data.provider !== provider) return;
+      usageStore.setError(provider, data?.error ?? "Unknown polling error");
     };
 
-    // Listen for auth expiration
-    const handleAuthExpired = () => {
-      console.warn("[useUsageData] Auth expired");
-      clearAuth();
-      setError("Session expired. Please log in again.");
+    const handleAuthExpired = (event?: AuthExpiredEvent) => {
+      if (event?.provider && event.provider !== provider) return;
+      clearAuth(provider);
+      usageStore.setError(
+        provider,
+        event?.message ?? "Session expired. Please log in again.",
+      );
     };
 
-    // Register listeners
     window.electron.ipcRenderer.on("usage:updated", handleUsageUpdate);
     window.electron.ipcRenderer.on("poller:error", handlePollError);
     window.electron.ipcRenderer.on("auth:expired", handleAuthExpired);
 
-    // Cleanup listeners
     return () => {
       window.electron.ipcRenderer.removeListener(
         "usage:updated",
@@ -68,8 +71,13 @@ export function useUsageData(): UsageStoreState {
         handleAuthExpired,
       );
     };
-  }, [clearAuth, setUsageData, setLastUpdated, setError, fetchCurrent]);
+  }, [clearAuth, provider, usageStore]);
 
-  // Return the store's getter functions
-  return useUsageStore();
+  return {
+    usageData: usageStore.usageByProvider[provider] ?? null,
+    isLoading: usageStore.isLoadingByProvider[provider],
+    error: usageStore.errorByProvider[provider] ?? null,
+    lastUpdated: usageStore.lastUpdatedByProvider[provider] ?? null,
+    fetchCurrent: async () => usageStore.fetchCurrent(provider),
+  };
 }
