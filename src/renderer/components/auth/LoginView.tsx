@@ -5,39 +5,56 @@ import { LoginFailureReason, ProviderType } from "@shared/types";
 
 type LoginStep = "idle" | "opening" | "waiting" | "verifying";
 
-const FEATURES: { icon: string; label: string }[] = [
-  { icon: "⚡", label: "Live session and weekly usage tracking" },
-  { icon: "🎨", label: "Per-model breakdown in compact/expanded widget views" },
-  { icon: "🔔", label: "Desktop alerts at usage thresholds" },
-  { icon: "📊", label: "Tray widget with quick glance usage visibility" },
-];
-
-function getLoginErrorMessage(
-  reason?: LoginFailureReason,
-  message?: string,
-): string {
-  if (reason === "token_missing") {
-    return (
-      message ??
-      "Login finished, but no Claude session token was captured. Try logging in again."
-    );
-  }
-  if (reason === "cancelled") {
-    return "Login cancelled. Please try again.";
-  }
-  return message ?? "Login failed. Please try again.";
-}
-
-function getStepMessage(step: LoginStep): string {
-  if (step === "opening") return "Opening login window...";
-  if (step === "waiting") return "Complete sign-in in the opened window...";
-  if (step === "verifying") return "Verifying session token...";
-  return "Login with Claude";
-}
-
 interface LoginViewProps {
   selectedProvider: ProviderType;
   onProviderChange: (provider: ProviderType) => void;
+}
+
+interface ProviderOption {
+  provider: ProviderType;
+  label: string;
+  description: string;
+  authUrl: string;
+}
+
+const PROVIDERS: ProviderOption[] = [
+  {
+    provider: "claude",
+    label: "Claude",
+    description: "Track session and weekly model usage from Claude.ai.",
+    authUrl: "https://claude.ai/login",
+  },
+  {
+    provider: "chatgpt",
+    label: "ChatGPT",
+    description: "Track available ChatGPT usage from your signed-in session.",
+    authUrl: "https://chatgpt.com/auth/login",
+  },
+];
+
+function getLoginErrorMessage(
+  provider: ProviderType,
+  reason?: LoginFailureReason,
+  message?: string,
+): string {
+  const providerLabel = provider === "chatgpt" ? "ChatGPT" : "Claude";
+  if (reason === "token_missing") {
+    return (
+      message ??
+      `Login finished, but no ${providerLabel} session token was captured. Try again.`
+    );
+  }
+  if (reason === "cancelled") {
+    return `${providerLabel} login was cancelled.`;
+  }
+  return message ?? `${providerLabel} login failed. Try again.`;
+}
+
+function getStepMessage(step: LoginStep, providerLabel: string): string {
+  if (step === "opening") return `Opening ${providerLabel} sign-in`;
+  if (step === "waiting") return "Waiting for browser sign-in";
+  if (step === "verifying") return "Verifying local session";
+  return `Continue with ${providerLabel}`;
 }
 
 export function LoginView({
@@ -52,11 +69,20 @@ export function LoginView({
   const [slowHint, setSlowHint] = useState(false);
   const [diagCopied, setDiagCopied] = useState(false);
   const [attempts, setAttempts] = useState(0);
-  const [showHelpActions, setShowHelpActions] = useState(false);
+
+  const selectedOption = useMemo(
+    () =>
+      PROVIDERS.find((option) => option.provider === selectedProvider) ??
+      PROVIDERS[0],
+    [selectedProvider],
+  );
+
+  const providerLabel = selectedOption.label;
 
   const copyDiagnostics = async () => {
     const diagnostics = [
       `timestamp=${new Date().toISOString()}`,
+      `provider=${selectedProvider}`,
       `step=${step}`,
       `loading=${isLoading}`,
       `window_opened=${windowOpened}`,
@@ -68,18 +94,12 @@ export function LoginView({
     try {
       await navigator.clipboard.writeText(diagnostics);
       setDiagCopied(true);
-      setTimeout(() => setDiagCopied(false), 1500);
+      window.setTimeout(() => setDiagCopied(false), 1500);
     } catch (copyError) {
       console.error("[LoginView] Failed to copy diagnostics:", copyError);
       setError("Could not copy diagnostics. Please copy logs from DevTools.");
     }
   };
-
-  const providerLabel = selectedProvider === "chatgpt" ? "ChatGPT" : "Claude";
-  const productName = useMemo(
-    () => `${providerLabel} Usage Widget`,
-    [providerLabel],
-  );
 
   const handleLogin = async (): Promise<void> => {
     setAttempts((count) => count + 1);
@@ -90,7 +110,7 @@ export function LoginView({
     setSlowHint(false);
     setStep("opening");
 
-    const slowTimer = setTimeout(() => setSlowHint(true), 15000);
+    const slowTimer = window.setTimeout(() => setSlowHint(true), 15000);
     const onWindowOpened = (payload?: { provider?: ProviderType }) => {
       if (!payload?.provider || payload.provider === selectedProvider) {
         setWindowOpened(true);
@@ -101,8 +121,8 @@ export function LoginView({
     window.electron?.ipcRenderer?.on("auth:login-window-opened", onWindowOpened);
 
     try {
-      if (!window.electron || !window.electron.ipcRenderer) {
-        throw new Error("IPC bridge not available. Please restart the application.");
+      if (!window.electron?.ipcRenderer) {
+        throw new Error("IPC bridge not available. Please restart the app.");
       }
 
       const result = await window.electron.ipcRenderer.invoke(
@@ -115,12 +135,14 @@ export function LoginView({
         setAuthenticated(true, selectedProvider);
         await window.electron.ipcRenderer.invoke("poller:start", selectedProvider);
       } else {
-        setError(getLoginErrorMessage(result?.reason, result?.message));
+        setError(
+          getLoginErrorMessage(selectedProvider, result?.reason, result?.message),
+        );
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unexpected login error");
     } finally {
-      clearTimeout(slowTimer);
+      window.clearTimeout(slowTimer);
       setIsLoading(false);
       setWindowOpened(false);
       setSlowHint(false);
@@ -132,176 +154,169 @@ export function LoginView({
     }
   };
 
+  const openProviderAuth = () => {
+    void window.electron?.ipcRenderer?.invoke(
+      "app:openExternal",
+      selectedOption.authUrl,
+    );
+  };
+
   return (
     <div
       data-widget-card
-      className="relative flex h-[600px] w-[800px] overflow-hidden bg-[#0c0c0d] font-['Segoe_UI',_Roboto,_sans-serif]"
+      className="relative flex h-[600px] w-[800px] overflow-hidden bg-[#101113] font-['Segoe_UI',_Roboto,_sans-serif] text-white"
     >
-      <div className="absolute right-4 top-3.5 z-10 flex gap-2">
+      <div className="absolute right-4 top-3 z-10 flex gap-1.5">
         <button
-          onClick={() => (window as any).electron?.ipcRenderer?.invoke("app:minimize")}
+          onClick={() => window.electron?.ipcRenderer?.invoke("app:minimize")}
           title="Minimize"
-          className="px-1 text-lg leading-none text-white/50 transition-colors hover:text-white"
+          className="flex h-8 w-8 items-center justify-center rounded-md text-white/45 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7aa2ff]"
         >
-          —
+          -
         </button>
         <button
-          onClick={() => (window as any).electron?.ipcRenderer?.invoke("app:quit")}
+          onClick={() => window.electron?.ipcRenderer?.invoke("app:quit")}
           title="Quit"
-          className="px-1 text-lg leading-none text-white/50 transition-colors hover:text-white"
+          className="flex h-8 w-8 items-center justify-center rounded-md text-white/45 transition-colors hover:bg-red-500/15 hover:text-red-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7aa2ff]"
         >
-          ✕
+          x
         </button>
       </div>
 
-      <div className="relative flex w-[400px] shrink-0 flex-col justify-center bg-[radial-gradient(ellipse_at_15%_45%,rgba(193,95,60,0.09)_0%,transparent_65%),#0c0c0d] px-12 py-[52px]">
-        <img
-          src={claudeIcon}
-          className="mb-7 h-14 w-14 shrink-0 rounded-2xl shadow-[0_0_24px_rgba(193,95,60,0.35)]"
-          alt="Widget"
-        />
-
-        <h1 className="mb-2.5 text-[26px] font-bold leading-[1.2] tracking-[-0.4px] text-white">
-          {providerLabel} Usage
-          <br />
-          <span className="bg-[linear-gradient(135deg,#C15F3C_0%,#a8492c_100%)] bg-clip-text text-transparent">
-            Widget
-          </span>
-        </h1>
-
-        <p className="mb-9 max-w-[270px] text-sm leading-[1.6] text-white/50">
-          Monitor your {providerLabel} usage in real-time, right from your desktop.
-        </p>
-
-        <ul className="m-0 flex list-none flex-col gap-3.5 p-0">
-          {FEATURES.map(({ icon, label }) => (
-            <li key={label} className="flex items-start gap-3">
-              <span className="mt-px flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[#C15F3C]/20 bg-[#C15F3C]/12 text-[13px]">
-                {icon}
-              </span>
-              <span className="text-[13px] leading-[1.5] text-white/60">
-                {label}
-              </span>
-            </li>
-          ))}
-        </ul>
-
-        <div className="absolute bottom-7 left-12 text-[11px] tracking-[0.3px] text-white/20">
-          {productName}
+      <section className="flex w-[328px] shrink-0 flex-col border-r border-white/10 bg-[#15171a] px-8 py-8">
+        <div className="mb-8 flex items-center gap-3">
+          <img
+            src={claudeIcon}
+            className="h-10 w-10 shrink-0 rounded-xl border border-white/10 bg-white/5"
+            alt=""
+          />
+          <div>
+            <div className="text-sm font-semibold leading-tight">Usage Widget</div>
+            <div className="mt-1 text-xs text-white/45">Desktop session monitor</div>
+          </div>
         </div>
-      </div>
 
-      <div className="w-px shrink-0 bg-[linear-gradient(to_bottom,transparent_0%,rgba(255,255,255,0.07)_20%,rgba(255,255,255,0.07)_80%,transparent_100%)]" />
-
-      <div className="flex flex-1 flex-col items-center justify-center px-12 py-[52px]">
-        <div className="flex w-full max-w-[320px] flex-col">
-          <h2 className="mb-1.5 text-[22px] font-bold tracking-[-0.3px] text-white">
-            Welcome back
-          </h2>
-          <p className="mb-5 text-[13px] leading-[1.5] text-white/45">
-            Select a provider and sign in to track usage.
+        <div className="mb-5">
+          <h1 className="text-[28px] font-semibold leading-[1.12] text-white">
+            Connect a provider
+          </h1>
+          <p className="mt-3 text-sm leading-6 text-white/55">
+            Choose the account you want to monitor. Sessions stay local and can
+            be cleared from settings.
           </p>
+        </div>
 
-          <div className="mb-4 flex rounded-xl border border-white/10 bg-white/[0.03] p-1">
-            {(["claude", "chatgpt"] as ProviderType[]).map((provider) => {
-              const active = selectedProvider === provider;
-              return (
-                <button
-                  key={provider}
-                  onClick={() => onProviderChange(provider)}
-                  className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
-                    active
-                      ? "bg-[#C15F3C]/20 text-[#C15F3C]"
-                      : "text-white/45 hover:text-white/70"
-                  }`}
-                >
-                  {provider === "claude" ? "Claude" : "ChatGPT"}
-                </button>
-              );
-            })}
+        <div className="flex flex-1 flex-col gap-3">
+          {PROVIDERS.map((option) => {
+            const active = selectedProvider === option.provider;
+            return (
+              <button
+                key={option.provider}
+                onClick={() => onProviderChange(option.provider)}
+                disabled={isLoading}
+                className={`group rounded-xl border p-4 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7aa2ff] disabled:cursor-not-allowed disabled:opacity-60 ${
+                  active
+                    ? "border-[#7aa2ff]/45 bg-[#1b2230]"
+                    : "border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.06]"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-white">
+                    {option.label}
+                  </span>
+                  <span
+                    className={`h-2.5 w-2.5 rounded-full ${
+                      active ? "bg-[#7aa2ff]" : "bg-white/20 group-hover:bg-white/35"
+                    }`}
+                  />
+                </div>
+                <p className="mt-2 text-xs leading-5 text-white/48">
+                  {option.description}
+                </p>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="rounded-lg border border-white/10 bg-black/15 px-3 py-2.5 text-[11px] leading-5 text-white/45">
+          Encrypted local token storage. No passwords are stored by this app.
+        </div>
+      </section>
+
+      <section className="flex min-w-0 flex-1 flex-col justify-center px-12 py-12">
+        <div className="max-w-[360px]">
+          <div className="mb-4 inline-flex rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-medium text-white/55">
+            {providerLabel} selected
           </div>
 
-          {slowHint && isLoading && (
-            <div className="mb-4 rounded-[10px] border border-amber-400/25 bg-amber-400/10 px-3 py-2.5 text-xs text-amber-200">
-              This is taking longer than usual. If the browser window is open,
-              complete sign-in there and wait a moment for token verification.
-            </div>
-          )}
+          <h2 className="text-[32px] font-semibold leading-[1.12] text-white">
+            Sign in to continue
+          </h2>
+          <p className="mt-3 text-sm leading-6 text-white/52">
+            We will open the official {providerLabel} login window, verify the
+            session locally, and return you to the widget.
+          </p>
 
-          {error && (
-            <div className="mb-4 flex items-start gap-[9px] rounded-[10px] border border-red-500/25 bg-red-500/10 px-[14px] py-[11px]">
-              <span className="mt-[3px] h-[7px] w-[7px] shrink-0 rounded-full bg-red-500 shadow-[0_0_6px_#ef4444]" />
-              <span className="text-xs leading-[1.5] text-red-300">{error}</span>
+          {slowHint && isLoading ? (
+            <div className="mt-5 rounded-xl border border-amber-300/25 bg-amber-300/10 px-4 py-3 text-xs leading-5 text-amber-100">
+              This is taking longer than expected. Finish sign-in in the browser
+              window, then wait a moment while the session is verified.
             </div>
-          )}
+          ) : null}
+
+          {error ? (
+            <div className="mt-5 rounded-xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-xs leading-5 text-red-200">
+              {error}
+            </div>
+          ) : null}
 
           <button
             onClick={handleLogin}
             disabled={isLoading}
-            className="w-full rounded-[10px] bg-[linear-gradient(135deg,#C15F3C_0%,#a8492c_100%)] px-4 py-[13px] text-sm font-semibold text-white shadow-[0_4px_18px_rgba(193,95,60,0.35)] transition-[opacity,box-shadow,background] hover:bg-[linear-gradient(135deg,#d06a44_0%,#C15F3C_100%)] hover:shadow-[0_6px_22px_rgba(193,95,60,0.5)] disabled:cursor-not-allowed disabled:opacity-[0.55] disabled:shadow-none"
+            className="mt-6 flex h-12 w-full items-center justify-center rounded-xl bg-[#e0e6ef] px-4 text-sm font-semibold text-[#111316] transition-colors hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7aa2ff] disabled:cursor-not-allowed disabled:bg-white/25 disabled:text-white/55"
           >
             {isLoading ? (
-              <span className="flex items-center justify-center gap-[9px]">
-                <span className="h-[15px] w-[15px] shrink-0 animate-spin rounded-full border-2 border-white/35 border-t-white" />
-                {getStepMessage(step)}
+              <span className="flex items-center justify-center gap-3">
+                <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-current/25 border-t-current" />
+                {getStepMessage(step, providerLabel)}
               </span>
             ) : (
-              `Login with ${providerLabel}`
+              getStepMessage("idle", providerLabel)
             )}
           </button>
 
-          <div className="mt-3 text-center">
+          <div className="mt-4 grid grid-cols-2 gap-2">
             <button
-              onClick={() => setShowHelpActions((v) => !v)}
-              className="text-[11px] text-white/45 underline-offset-2 transition-colors hover:text-white/70 hover:underline"
+              onClick={openProviderAuth}
+              disabled={isLoading}
+              className="h-9 rounded-lg border border-white/10 bg-white/[0.04] text-xs font-medium text-white/60 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7aa2ff] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {showHelpActions ? "Hide help actions" : "Need help?"}
+              Open in browser
             </button>
-            {showHelpActions && (
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <button
-                  onClick={() =>
-                    (window as any).electron?.ipcRenderer?.invoke(
-                      "app:openExternal",
-                      "https://claude.ai/login",
-                    )
-                  }
-                  className="rounded-md border border-white/15 bg-white/[0.04] px-2 py-1.5 text-[11px] text-white/70 transition-colors hover:bg-white/[0.08]"
-                >
-                  Open Claude
-                </button>
-                <button
-                  onClick={() => void copyDiagnostics()}
-                  className="rounded-md border border-white/15 bg-white/[0.04] px-2 py-1.5 text-[11px] text-white/70 transition-colors hover:bg-white/[0.08]"
-                >
-                  {diagCopied ? "Copied" : "Copy debug"}
-                </button>
-              </div>
-            )}
+            <button
+              onClick={() => void copyDiagnostics()}
+              className="h-9 rounded-lg border border-white/10 bg-white/[0.04] text-xs font-medium text-white/60 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7aa2ff]"
+            >
+              {diagCopied ? "Diagnostics copied" : "Copy diagnostics"}
+            </button>
           </div>
 
-          <div className="my-6 h-px bg-white/5" />
-
-          <div className="flex items-center justify-center gap-[7px]">
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="rgba(255,255,255,0.3)"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-            </svg>
-            <span className="text-xs text-white/30">
-              Credentials stay in provider auth pages; only encrypted session tokens are stored
-            </span>
+          <div className="mt-8 border-t border-white/10 pt-5">
+            <div className="grid grid-cols-3 gap-3 text-center">
+              {["Local only", "Encrypted", "Official sign-in"].map((label) => (
+                <div
+                  key={label}
+                  className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-3"
+                >
+                  <div className="text-[11px] font-semibold text-white/70">
+                    {label}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+      </section>
     </div>
   );
 }
