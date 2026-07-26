@@ -1,29 +1,40 @@
 /**
- * Production-grade session manager for Claude.ai authentication.
+ * Session manager for Claude.ai and ChatGPT authentication.
  *
  * Security model:
  * - Cookie is encrypted with electron-store using a per-install UUID as key.
  * - The UUID is generated once with crypto.randomUUID() and stored in a
- *   separate unencrypted store — no native build tools required.
- * - We NEVER read, log, or store email/password — only the session cookie
- *   that Anthropic sets after a successful login.
+ *   separate unencrypted store.
+ * - Only session cookies are persisted.
  */
 import Store from "electron-store";
 import { randomUUID } from "crypto";
 import { session } from "electron";
 import isDev from "electron-is-dev";
+import { ProviderType } from "@shared/types";
 
-/**
- * Ordered list of Claude.ai session cookie names to look for.
- * Configurable here — do not hardcode elsewhere.
- */
-export const SESSION_COOKIE_KEYS: string[] = [
-  "sessionKey",
-  "sessionKeyV2",
-  "CH_SESSION",
-  "__Secure-next-auth.session-token",
-  "next-auth.session-token",
-];
+const PROVIDERS: ProviderType[] = ["claude", "chatgpt"];
+
+const PROVIDER_URLS: Record<ProviderType, string[]> = {
+  claude: ["https://claude.ai"],
+  chatgpt: ["https://chatgpt.com", "https://openai.com"],
+};
+
+const SESSION_COOKIE_KEYS_BY_PROVIDER: Record<ProviderType, string[]> = {
+  claude: [
+    "sessionKey",
+    "sessionKeyV2",
+    "CH_SESSION",
+    "__Secure-next-auth.session-token",
+    "next-auth.session-token",
+  ],
+  chatgpt: [
+    "__Secure-next-auth.session-token",
+    "next-auth.session-token",
+    "__Secure-authjs.session-token",
+    "authjs.session-token",
+  ],
+};
 
 interface SessionStore {
   sessionCookie: string;
@@ -35,79 +46,82 @@ interface KeyStore {
   installId: string;
 }
 
-// Lazy-init stores — created once on first use
-let _keyStore: Store<KeyStore> | null = null;
-let _store: Store<SessionStore> | null = null;
+let keyStore: Store<KeyStore> | null = null;
+const stores: Partial<Record<ProviderType, Store<SessionStore>>> = {};
 
-/** Returns (or generates) a stable per-install UUID used as the encryption key. */
 function getEncryptionKey(): string {
-  if (!_keyStore) {
-    _keyStore = new Store<KeyStore>({ name: "install-id" });
+  if (!keyStore) {
+    keyStore = new Store<KeyStore>({ name: "install-id" });
   }
-  let id = _keyStore.get("installId");
+  let id = keyStore.get("installId");
   if (!id) {
     id = randomUUID();
-    _keyStore.set("installId", id);
+    keyStore.set("installId", id);
     if (isDev) console.log("[SessionManager] Generated new install ID");
   }
   return id;
 }
 
-function getStore(): Store<SessionStore> {
-  if (!_store) {
+function getStoreName(provider: ProviderType): string {
+  return `auth-session-${provider}`;
+}
+
+function getStore(provider: ProviderType): Store<SessionStore> {
+  if (stores[provider]) return stores[provider]!;
+
+  try {
+    stores[provider] = new Store<SessionStore>({
+      name: getStoreName(provider),
+      encryptionKey: getEncryptionKey(),
+    });
+    stores[provider]!.get("sessionCookie");
+  } catch (err) {
+    console.warn(
+      `[SessionManager] Auth store corrupted for ${provider}, wiping:`,
+      err,
+    );
     try {
-      _store = new Store<SessionStore>({
-        name: "auth-session",
-        encryptionKey: getEncryptionKey(),
-      });
-      // Verify we can actually read it — throws if encrypted with wrong key
-      _store.get("sessionCookie");
-    } catch (err) {
-      // Store is corrupted or was encrypted with a different key (e.g. after reinstall).
-      // Wipe it and start fresh — user will need to log in again.
-      console.warn("[SessionManager] Auth store corrupted, wiping:", err);
-      try {
-        // Create a plain (unencrypted) store with same name just to clear the file
-        const wiper = new Store({ name: "auth-session" });
-        wiper.clear();
-      } catch {}
-      _store = new Store<SessionStore>({
-        name: "auth-session",
-        encryptionKey: getEncryptionKey(),
-      });
-    }
+      const wiper = new Store({ name: getStoreName(provider) });
+      wiper.clear();
+    } catch {}
+    stores[provider] = new Store<SessionStore>({
+      name: getStoreName(provider),
+      encryptionKey: getEncryptionKey(),
+    });
   }
-  return _store;
+
+  return stores[provider]!;
 }
 
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
-/**
- * Persist an encrypted session cookie. Call this after login completes.
- */
-export function saveSession(cookie: string): void {
-  const now = Date.now();
-  getStore().set("sessionCookie", cookie);
-  getStore().set("savedAt", now);
-  getStore().set("expiresAt", now + SESSION_TTL_MS);
-  if (isDev)
-    console.log("[SessionManager] Session saved (encrypted, machine-locked)");
+export function getSessionCookieKeys(provider: ProviderType): string[] {
+  return SESSION_COOKIE_KEYS_BY_PROVIDER[provider];
 }
 
-/**
- * Retrieve the stored session cookie, or null if none / expired.
- */
-export function getSession(): string | null {
+export function saveSession(cookie: string, provider: ProviderType): void {
+  const now = Date.now();
+  const store = getStore(provider);
+  store.set("sessionCookie", cookie);
+  store.set("savedAt", now);
+  store.set("expiresAt", now + SESSION_TTL_MS);
+  if (isDev) {
+    console.log(
+      `[SessionManager] Session saved for ${provider} (encrypted, machine-locked)`,
+    );
+  }
+}
+
+export function getSession(provider: ProviderType): string | null {
   try {
-    const store = getStore();
+    const store = getStore(provider);
     const cookie = store.get("sessionCookie");
     const expiresAt = store.get("expiresAt");
 
     if (!cookie) return null;
-
     if (expiresAt && expiresAt < Date.now()) {
-      clearSession();
-      if (isDev) console.log("[SessionManager] Session expired, cleared");
+      clearSession(provider);
+      if (isDev) console.log(`[SessionManager] ${provider} session expired`);
       return null;
     }
 
@@ -117,61 +131,56 @@ export function getSession(): string | null {
   }
 }
 
-/**
- * Remove the stored session and clear all claude.ai cookies from Electron's session.
- */
-export function clearSession(): void {
-  getStore().clear();
-  if (isDev) console.log("[SessionManager] Session cleared");
+export function clearSession(provider: ProviderType): void {
+  getStore(provider).clear();
+  if (isDev) console.log(`[SessionManager] Session cleared for ${provider}`);
 }
 
-/**
- * Clear all claude.ai cookies from Electron's defaultSession.
- * Call on logout to ensure electron.net also loses the session.
- */
-export async function clearSessionCookies(): Promise<void> {
+export async function clearSessionCookies(provider: ProviderType): Promise<void> {
   try {
-    const cookies = await session.defaultSession.cookies.get({
-      url: "https://claude.ai",
-    });
-    for (const cookie of cookies) {
-      await session.defaultSession.cookies.remove(
-        "https://claude.ai",
-        cookie.name,
+    const urls = PROVIDER_URLS[provider];
+    let removed = 0;
+    for (const url of urls) {
+      const cookies = await session.defaultSession.cookies.get({ url });
+      for (const cookie of cookies) {
+        await session.defaultSession.cookies.remove(url, cookie.name);
+        removed += 1;
+      }
+    }
+    if (isDev) {
+      console.log(
+        `[SessionManager] Cleared ${removed} browser cookie(s) for ${provider}`,
       );
     }
-    if (isDev)
-      console.log(
-        `[SessionManager] Cleared ${cookies.length} claude.ai session cookie(s)`,
-      );
   } catch (error) {
-    console.error("[SessionManager] Failed to clear cookies:", error);
+    console.error(
+      `[SessionManager] Failed to clear cookies for ${provider}:`,
+      error,
+    );
   }
 }
 
-/**
- * Returns true if a valid, unexpired session cookie is stored.
- * The '__electron_session__' sentinel is treated as valid —
- * electron.net uses session.defaultSession automatically regardless.
- */
-export function isLoggedIn(): boolean {
-  const cookie = getSession();
-  // Only the old legacy dummy 'authenticated' is treated as not-logged-in
+export function isLoggedIn(provider: ProviderType): boolean {
+  const cookie = getSession(provider);
   return cookie !== null && cookie !== "authenticated";
 }
 
-// ---------------------------------------------------------------------------
-// Backward-compat shim — keeps existing code that uses SessionManager.* working
-// without changes. Remove once all call sites are migrated.
-// ---------------------------------------------------------------------------
+export function hasAnySession(): boolean {
+  return PROVIDERS.some((provider) => isLoggedIn(provider));
+}
+
+// Backward-compat shim (defaults to Claude when provider is omitted).
 export const SessionManager = {
-  saveSession,
-  getSession,
-  getSessionCookie: getSession,
-  clearSession,
-  clearSessionCookies,
-  isLoggedIn,
-  isAuthenticated: isLoggedIn,
-  isRealSession: isLoggedIn,
-  validateSession: isLoggedIn,
+  saveSession: (cookie: string, provider: ProviderType = "claude") =>
+    saveSession(cookie, provider),
+  getSession: (provider: ProviderType = "claude") => getSession(provider),
+  getSessionCookie: (provider: ProviderType = "claude") => getSession(provider),
+  clearSession: (provider: ProviderType = "claude") => clearSession(provider),
+  clearSessionCookies: (provider: ProviderType = "claude") =>
+    clearSessionCookies(provider),
+  isLoggedIn: (provider: ProviderType = "claude") => isLoggedIn(provider),
+  isAuthenticated: (provider: ProviderType = "claude") => isLoggedIn(provider),
+  isRealSession: (provider: ProviderType = "claude") => isLoggedIn(provider),
+  validateSession: (provider: ProviderType = "claude") => isLoggedIn(provider),
+  hasAnySession,
 };

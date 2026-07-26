@@ -3,6 +3,7 @@ import { useUsageData } from "@renderer/hooks/useUsageData";
 import { WidgetHeader, SizeOption } from "./WidgetHeader";
 import { Footer } from "./Footer";
 import { AlertBanner } from "./AlertBanner";
+import { ProviderType } from "@shared/types";
 
 function formatCountdown(ms: number): string {
   if (ms <= 0) return "0d 00:00:00";
@@ -103,6 +104,8 @@ function StackedBar({
 }
 
 export function ExpandedView({
+  provider,
+  onProviderChange,
   selectedSize,
   onSizeChange,
   isPinned,
@@ -115,6 +118,8 @@ export function ExpandedView({
   onAlertHoverStart,
   onAlertHoverEnd,
 }: {
+  provider: ProviderType;
+  onProviderChange: (provider: ProviderType) => void;
   selectedSize: SizeOption;
   onSizeChange: (s: SizeOption) => void;
   isPinned?: boolean;
@@ -127,7 +132,7 @@ export function ExpandedView({
   onAlertHoverStart?: () => void;
   onAlertHoverEnd?: () => void;
 }): React.ReactElement {
-  const { usageData, isLoading, lastUpdated } = useUsageData();
+  const { usageData, isLoading, lastUpdated } = useUsageData(provider);
   const [countdown, setCountdown] = useState("0d 00:00:00");
   const [hoveredModel, setHoveredModel] = useState<number | null>(null);
   const [selectedThresholds, setSelectedThresholds] = useState<number[]>([
@@ -223,11 +228,48 @@ export function ExpandedView({
     sessionResetDate !== null &&
     sessionResetDate.getTime() - Date.now() <= 5 * 60 * 60 * 1000;
 
-  const models = [
-    { name: "Opus 4.6", used: opusPct, color: "#C15F3C", dotClass: "bg-[#C15F3C]" },
-    { name: "Sonnet 4.5", used: sonnetPct, color: "#6b9eff", dotClass: "bg-[#6b9eff]" },
-    { name: "Haiku 4.5", used: haikuPct, color: "#10b981", dotClass: "bg-emerald-500" },
-  ];
+  const models =
+    provider === "chatgpt"
+      ? [
+          {
+            name: "GPT-5",
+            used: opusPct,
+            color: "#C15F3C",
+            dotClass: "bg-[#C15F3C]",
+          },
+          {
+            name: "GPT-4.1",
+            used: sonnetPct,
+            color: "#6b9eff",
+            dotClass: "bg-[#6b9eff]",
+          },
+          {
+            name: "Other",
+            used: haikuPct,
+            color: "#10b981",
+            dotClass: "bg-emerald-500",
+          },
+        ]
+      : [
+          {
+            name: "Opus 4.6",
+            used: opusPct,
+            color: "#C15F3C",
+            dotClass: "bg-[#C15F3C]",
+          },
+          {
+            name: "Sonnet 4.5",
+            used: sonnetPct,
+            color: "#6b9eff",
+            dotClass: "bg-[#6b9eff]",
+          },
+          {
+            name: "Haiku 4.5",
+            used: haikuPct,
+            color: "#10b981",
+            dotClass: "bg-emerald-500",
+          },
+        ];
 
   return (
     <div className="h-auto overflow-y-visible bg-transparent">
@@ -247,6 +289,8 @@ export function ExpandedView({
           ) : null}
           <div className="border-b border-white/5">
             <WidgetHeader
+              provider={provider}
+              onProviderChange={onProviderChange}
               planType={usageData.planType}
               userName={usageData.userName}
               selectedSize={selectedSize}
@@ -372,32 +416,37 @@ export function ExpandedView({
                 onClick={() =>
                   (window as any).electron?.ipcRenderer?.invoke(
                     "app:openExternal",
-                    "https://claude.ai",
+                    provider === "chatgpt" ? "https://chatgpt.com/" : "https://claude.ai",
                   )
                 }
                 className="flex flex-1 items-center justify-center gap-[5px] rounded-lg border border-white/10 bg-white/5 py-[9px] text-[11px] font-semibold text-white/60"
               >
-                <span className="text-[13px]">↗</span> Open Claude
+                  <span className="text-[13px]">↗</span>{" "}
+                  {provider === "chatgpt" ? "Open ChatGPT" : "Open Claude"}
               </button>
               <button
                 onClick={() =>
                   (window as any).electron?.ipcRenderer?.invoke(
                     "app:openExternal",
-                    "https://claude.ai/settings/general",
+                    provider === "chatgpt"
+                      ? "https://chatgpt.com/"
+                      : "https://claude.ai/settings/general",
                   )
                 }
                 className="flex flex-1 items-center justify-center gap-[5px] rounded-lg border border-[#C15F3C]/20 bg-[#C15F3C]/10 py-[9px] text-[11px] font-semibold text-[#C15F3C]"
               >
-                <span className="text-[11px]">⚙</span> Settings
+                <span className="text-[11px]">⚙</span>{" "}
+                {provider === "chatgpt" ? "Workspace" : "Settings"}
               </button>
             </div>
           </div>
 
           <Footer
+            provider={provider}
             lastUpdated={lastUpdated ? new Date(lastUpdated) : null}
             label={usageData.userName}
             onRefresh={() =>
-              (window as any).electron?.ipcRenderer?.invoke("poller:start")
+              (window as any).electron?.ipcRenderer?.invoke("poller:start", provider)
             }
           />
         </div>

@@ -1,15 +1,15 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useAuthStore } from "@renderer/store/auth-store";
 import claudeIcon from "../../assets/ClaudeIcon-Square.svg";
-import { LoginFailureReason } from "@shared/types";
+import { LoginFailureReason, ProviderType } from "@shared/types";
 
 type LoginStep = "idle" | "opening" | "waiting" | "verifying";
 
 const FEATURES: { icon: string; label: string }[] = [
-  { icon: "⚡", label: "Live 5-hour session & 7-day rolling usage" },
-  { icon: "🎨", label: "Per-model breakdown — Opus, Sonnet & Haiku" },
-  { icon: "🔔", label: "Desktop usage alerts at your chosen thresholds" },
-  { icon: "📊", label: "Compact system-tray widget, always in reach" },
+  { icon: "⚡", label: "Live session and weekly usage tracking" },
+  { icon: "🎨", label: "Per-model breakdown in compact/expanded widget views" },
+  { icon: "🔔", label: "Desktop alerts at usage thresholds" },
+  { icon: "📊", label: "Tray widget with quick glance usage visibility" },
 ];
 
 function getLoginErrorMessage(
@@ -29,13 +29,21 @@ function getLoginErrorMessage(
 }
 
 function getStepMessage(step: LoginStep): string {
-  if (step === "opening") return "Opening login window…";
-  if (step === "waiting") return "Complete sign-in in the opened window…";
-  if (step === "verifying") return "Verifying session token…";
+  if (step === "opening") return "Opening login window...";
+  if (step === "waiting") return "Complete sign-in in the opened window...";
+  if (step === "verifying") return "Verifying session token...";
   return "Login with Claude";
 }
 
-export function LoginView(): React.ReactElement {
+interface LoginViewProps {
+  selectedProvider: ProviderType;
+  onProviderChange: (provider: ProviderType) => void;
+}
+
+export function LoginView({
+  selectedProvider,
+  onProviderChange,
+}: LoginViewProps): React.ReactElement {
   const { setAuthenticated } = useAuthStore();
   const [isLoading, setIsLoading] = useState(false);
   const [windowOpened, setWindowOpened] = useState(false);
@@ -67,6 +75,12 @@ export function LoginView(): React.ReactElement {
     }
   };
 
+  const providerLabel = selectedProvider === "chatgpt" ? "ChatGPT" : "Claude";
+  const productName = useMemo(
+    () => `${providerLabel} Usage Widget`,
+    [providerLabel],
+  );
+
   const handleLogin = async (): Promise<void> => {
     setAttempts((count) => count + 1);
     setIsLoading(true);
@@ -77,10 +91,13 @@ export function LoginView(): React.ReactElement {
     setStep("opening");
 
     const slowTimer = setTimeout(() => setSlowHint(true), 15000);
-    const onWindowOpened = () => {
-      setWindowOpened(true);
-      setStep("waiting");
+    const onWindowOpened = (payload?: { provider?: ProviderType }) => {
+      if (!payload?.provider || payload.provider === selectedProvider) {
+        setWindowOpened(true);
+        setStep("waiting");
+      }
     };
+
     window.electron?.ipcRenderer?.on("auth:login-window-opened", onWindowOpened);
 
     try {
@@ -88,19 +105,20 @@ export function LoginView(): React.ReactElement {
         throw new Error("IPC bridge not available. Please restart the application.");
       }
 
-      const result = await window.electron.ipcRenderer.invoke("auth:login");
+      const result = await window.electron.ipcRenderer.invoke(
+        "auth:login",
+        selectedProvider,
+      );
       setStep("verifying");
 
-      if (result.success && result.isAuthenticated) {
-        setAuthenticated(true);
+      if (result?.success && result?.isAuthenticated) {
+        setAuthenticated(true, selectedProvider);
+        await window.electron.ipcRenderer.invoke("poller:start", selectedProvider);
       } else {
-        setError(getLoginErrorMessage(result.reason, result.message));
+        setError(getLoginErrorMessage(result?.reason, result?.message));
       }
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "An unexpected error occurred";
-      console.error("[LoginView] Login error:", errorMessage);
-      setError(errorMessage);
+      setError(err instanceof Error ? err.message : "Unexpected login error");
     } finally {
       clearTimeout(slowTimer);
       setIsLoading(false);
@@ -140,11 +158,11 @@ export function LoginView(): React.ReactElement {
         <img
           src={claudeIcon}
           className="mb-7 h-14 w-14 shrink-0 rounded-2xl shadow-[0_0_24px_rgba(193,95,60,0.35)]"
-          alt="Claude"
+          alt="Widget"
         />
 
         <h1 className="mb-2.5 text-[26px] font-bold leading-[1.2] tracking-[-0.4px] text-white">
-          Claude Usage
+          {providerLabel} Usage
           <br />
           <span className="bg-[linear-gradient(135deg,#C15F3C_0%,#a8492c_100%)] bg-clip-text text-transparent">
             Widget
@@ -152,7 +170,7 @@ export function LoginView(): React.ReactElement {
         </h1>
 
         <p className="mb-9 max-w-[270px] text-sm leading-[1.6] text-white/50">
-          Monitor your Claude API usage in real-time, right from your desktop.
+          Monitor your {providerLabel} usage in real-time, right from your desktop.
         </p>
 
         <ul className="m-0 flex list-none flex-col gap-3.5 p-0">
@@ -169,20 +187,39 @@ export function LoginView(): React.ReactElement {
         </ul>
 
         <div className="absolute bottom-7 left-12 text-[11px] tracking-[0.3px] text-white/20">
-          Claude Usage Widget
+          {productName}
         </div>
       </div>
 
       <div className="w-px shrink-0 bg-[linear-gradient(to_bottom,transparent_0%,rgba(255,255,255,0.07)_20%,rgba(255,255,255,0.07)_80%,transparent_100%)]" />
 
       <div className="flex flex-1 flex-col items-center justify-center px-12 py-[52px]">
-        <div className="flex w-full max-w-[296px] flex-col">
+        <div className="flex w-full max-w-[320px] flex-col">
           <h2 className="mb-1.5 text-[22px] font-bold tracking-[-0.3px] text-white">
             Welcome back
           </h2>
-          <p className="mb-6 text-[13px] leading-[1.5] text-white/45">
-            Sign in with your Claude account to start tracking your API usage.
+          <p className="mb-5 text-[13px] leading-[1.5] text-white/45">
+            Select a provider and sign in to track usage.
           </p>
+
+          <div className="mb-4 flex rounded-xl border border-white/10 bg-white/[0.03] p-1">
+            {(["claude", "chatgpt"] as ProviderType[]).map((provider) => {
+              const active = selectedProvider === provider;
+              return (
+                <button
+                  key={provider}
+                  onClick={() => onProviderChange(provider)}
+                  className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                    active
+                      ? "bg-[#C15F3C]/20 text-[#C15F3C]"
+                      : "text-white/45 hover:text-white/70"
+                  }`}
+                >
+                  {provider === "claude" ? "Claude" : "ChatGPT"}
+                </button>
+              );
+            })}
+          </div>
 
           {slowHint && isLoading && (
             <div className="mb-4 rounded-[10px] border border-amber-400/25 bg-amber-400/10 px-3 py-2.5 text-xs text-amber-200">
@@ -209,7 +246,7 @@ export function LoginView(): React.ReactElement {
                 {getStepMessage(step)}
               </span>
             ) : (
-              "Login with Claude"
+              `Login with ${providerLabel}`
             )}
           </button>
 
@@ -260,7 +297,7 @@ export function LoginView(): React.ReactElement {
               <path d="M7 11V7a5 5 0 0 1 10 0v4" />
             </svg>
             <span className="text-xs text-white/30">
-              Credentials are handled by Claude; only an encrypted session token is stored locally
+              Credentials stay in provider auth pages; only encrypted session tokens are stored
             </span>
           </div>
         </div>
