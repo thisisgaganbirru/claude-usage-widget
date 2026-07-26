@@ -47,7 +47,12 @@ export const useAuthStore = create<AuthStoreState>((set, get) => ({
   checkSession: async (provider) => {
     const target = provider ?? get().selectedProvider;
     try {
-      const result = await window.electron.ipcRenderer.invoke(
+      const ipc = window.electron?.ipcRenderer;
+      if (!ipc) {
+        return false;
+      }
+
+      const result = await ipc.invoke(
         "auth:checkSession",
         target,
       );
