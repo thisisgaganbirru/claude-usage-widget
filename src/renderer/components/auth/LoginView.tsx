@@ -61,7 +61,7 @@ export function LoginView({
   selectedProvider,
   onProviderChange,
 }: LoginViewProps): React.ReactElement {
-  const { setAuthenticated } = useAuthStore();
+  const { loadAccounts, setAuthenticated } = useAuthStore();
   const [isLoading, setIsLoading] = useState(false);
   const [windowOpened, setWindowOpened] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -133,6 +133,7 @@ export function LoginView({
 
       if (result?.success && result?.isAuthenticated) {
         setAuthenticated(true, selectedProvider);
+        await loadAccounts(selectedProvider);
         await window.electron.ipcRenderer.invoke("poller:start", selectedProvider);
       } else {
         setError(

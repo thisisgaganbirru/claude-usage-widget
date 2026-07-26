@@ -42,6 +42,7 @@ export const App = () => {
     isAuthenticated,
     setAuthenticated,
     checkSession,
+    loadAccounts,
   } = useAuthStore();
   const [selectedSize, setSelectedSize] = useState<SizeOption>("Small");
   const [isPinned, setIsPinned] = useState(true);
@@ -200,6 +201,8 @@ export const App = () => {
 
   useEffect(() => {
     const ipc = window.electron?.ipcRenderer;
+    void loadAccounts("claude");
+    void loadAccounts("chatgpt");
     void Promise.all([checkSession("claude"), checkSession("chatgpt")]).then(
       ([claudeAuthed, chatgptAuthed]) => {
         if (!claudeAuthed && !chatgptAuthed) return;
@@ -264,7 +267,7 @@ export const App = () => {
         handleThreshold,
       );
     };
-  }, [checkSession, selectedProvider, setAuthenticated, setSelectedProvider]);
+  }, [checkSession, loadAccounts, selectedProvider, setAuthenticated, setSelectedProvider]);
 
   useEffect(() => {
     if (!isDev || !isAuthenticated || didShowAlertPreview) return;

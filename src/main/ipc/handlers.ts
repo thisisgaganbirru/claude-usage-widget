@@ -12,9 +12,12 @@ import { UsagePoller } from "@main/data/usage-poller";
 import { openLoginWindow } from "@main/auth/login-window";
 import {
   SessionManager,
+  clearAllSessions,
   clearSession,
   clearSessionCookies,
   isLoggedIn,
+  listAccounts,
+  setActiveAccount,
 } from "@main/auth/session-manager";
 import { clearOrgIdCache } from "@main/data/usage-fetcher";
 import { SettingsManager } from "@main/settings/settings-manager";
@@ -179,8 +182,8 @@ export function registerIPCHandlers(
         `[IPC] ${IPC_INVOKE_CHANNELS.AUTH_LOGOUT_EVERYWHERE} requested`,
       );
     }
-    clearSession("claude");
-    clearSession("chatgpt");
+    clearAllSessions("claude");
+    clearAllSessions("chatgpt");
     clearOrgIdCache();
     await clearSessionCookies("claude");
     await clearSessionCookies("chatgpt");
@@ -197,6 +200,30 @@ export function registerIPCHandlers(
         usagePoller.start(provider);
       }
       return { provider, isAuthenticated };
+    },
+  );
+
+  ipcMain.handle(
+    IPC_INVOKE_CHANNELS.AUTH_LIST_ACCOUNTS,
+    (_event, providerInput?: ProviderType) => {
+      const provider =
+        providerInput === "claude" || providerInput === "chatgpt"
+          ? providerInput
+          : undefined;
+      return { provider, accounts: listAccounts(provider) };
+    },
+  );
+
+  ipcMain.handle(
+    IPC_INVOKE_CHANNELS.AUTH_SET_ACTIVE_ACCOUNT,
+    (_event, providerInput: ProviderType, accountId: string) => {
+      const provider = resolveProvider(providerInput);
+      const success = setActiveAccount(provider, accountId);
+      if (success) {
+        usagePoller?.stop(provider);
+        usagePoller?.start(provider);
+      }
+      return { success, provider, accountId };
     },
   );
 
