@@ -202,13 +202,10 @@ export const App = () => {
     const ipc = window.electron?.ipcRenderer;
     void Promise.all([checkSession("claude"), checkSession("chatgpt")]).then(
       ([claudeAuthed, chatgptAuthed]) => {
-        const provider = claudeAuthed
-          ? "claude"
-          : chatgptAuthed
-            ? "chatgpt"
-            : "claude";
+        if (!claudeAuthed && !chatgptAuthed) return;
+        const provider = claudeAuthed ? "claude" : "chatgpt";
         setSelectedProvider(provider);
-        if ((claudeAuthed || chatgptAuthed) && ipc) {
+        if (ipc) {
           void ipc.invoke("poller:start", provider);
         }
       },
