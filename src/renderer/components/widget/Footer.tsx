@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { ProviderType } from "@shared/types";
 
 function formatLastUpdated(ts: Date | null): string {
   if (!ts) return "Never";
@@ -9,6 +10,7 @@ function formatLastUpdated(ts: Date | null): string {
 }
 
 interface FooterProps {
+  provider: ProviderType;
   lastUpdated: Date | null;
   label?: string;
   onRefresh?: () => void;
@@ -18,6 +20,7 @@ interface FooterProps {
 }
 
 export function Footer({
+  provider,
   lastUpdated,
   label,
   onRefresh,
@@ -42,6 +45,12 @@ export function Footer({
     </span>
   );
 
+  const settingsUrl =
+    provider === "chatgpt"
+      ? "https://chatgpt.com/"
+      : "https://claude.ai/settings/general";
+  const settingsLabel = provider === "chatgpt" ? "Open ChatGPT" : "Open Claude settings";
+
   return (
     <div className={`${borderTopClass} ${paddingClass}`}>
       {/* Row 1: username + external link */}
@@ -55,11 +64,11 @@ export function Footer({
             {label}
           </span>
           <span
-            title="Open Claude settings"
+            title={settingsLabel}
             onClick={() =>
               (window as any).electron?.ipcRenderer?.invoke(
                 "app:openExternal",
-                "https://claude.ai/settings/general",
+                settingsUrl,
               )
             }
             className="inline-flex cursor-pointer leading-none"

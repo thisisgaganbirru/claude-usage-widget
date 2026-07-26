@@ -1,13 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useAuthStore } from "@renderer/store/auth-store";
-import { useUsageStore } from "@renderer/store/usage-store";
 import { LoginView } from "@renderer/components/auth/LoginView";
 import { MiniView } from "@renderer/components/widget/MiniView";
 import { CompactView } from "@renderer/components/widget/CompactView";
 import { ExpandedView } from "@renderer/components/widget/ExpandedView";
 import { SettingsPanel } from "@renderer/components/settings/SettingsPanel";
 import { SizeOption } from "@renderer/components/widget/WidgetHeader";
-import { ThresholdCrossedEvent, WidgetSettings } from "@shared/types";
+import { ProviderType, ThresholdCrossedEvent, WidgetSettings } from "@shared/types";
 
 const isDev = process.env.NODE_ENV === "development";
 
@@ -37,8 +36,13 @@ const WINDOW_SIZES: Record<SizeOption, [number, number]> = {
 const SETTINGS_WINDOW_SIZE: [number, number] = [800, 600];
 
 export const App = () => {
-  const { isAuthenticated, checkSession, setAuthenticated } = useAuthStore();
-  const fetchCurrent = useUsageStore((state) => state.fetchCurrent);
+  const {
+    selectedProvider,
+    setSelectedProvider,
+    isAuthenticated,
+    setAuthenticated,
+    checkSession,
+  } = useAuthStore();
   const [selectedSize, setSelectedSize] = useState<SizeOption>("Small");
   const [isPinned, setIsPinned] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -110,9 +114,19 @@ export const App = () => {
     }
   };
 
+  const handleProviderChange = async (provider: ProviderType) => {
+    setSelectedProvider(provider);
+    const authed = await checkSession(provider);
+    if (authed) {
+      void window.electron.ipcRenderer.invoke("poller:start", provider);
+    }
+  };
+
   const handleLogout = async () => {
-    await window.electron.ipcRenderer.invoke("auth:logout").catch(() => {});
-    setAuthenticated(false);
+    await window.electron.ipcRenderer
+      .invoke("auth:logout", selectedProvider)
+      .catch(() => {});
+    setAuthenticated(false, selectedProvider);
   };
 
   const handleHardLogout = async () => {
@@ -133,8 +147,6 @@ export const App = () => {
       .catch(() => {});
   };
 
-  // Toggle mouse passthrough: forward:true means mousemove still reaches renderer
-  // Only send IPC when state changes to avoid flooding
   useEffect(() => {
     const ipc = window.electron?.ipcRenderer;
     if (!ipc) return;
@@ -155,7 +167,6 @@ export const App = () => {
     return () => window.removeEventListener("mousemove", onMouseMove);
   }, []);
 
-  // Resize window based on auth state and selected size
   useEffect(() => {
     if (!isAuthenticated) {
       void window.electron.ipcRenderer
@@ -178,7 +189,20 @@ export const App = () => {
   }, [selectedSize, isAuthenticated, isSettingsOpen]);
 
   useEffect(() => {
-    void checkSession();
+    void Promise.all([checkSession("claude"), checkSession("chatgpt")]).then(
+      ([claudeAuthed, chatgptAuthed]) => {
+        const provider = claudeAuthed
+          ? "claude"
+          : chatgptAuthed
+            ? "chatgpt"
+            : "claude";
+        setSelectedProvider(provider);
+        if (claudeAuthed || chatgptAuthed) {
+          void window.electron.ipcRenderer.invoke("poller:start", provider);
+        }
+      },
+    );
+
     void window.electron.ipcRenderer
       .invoke("window:getPinned")
       .then((result) => {
@@ -187,7 +211,9 @@ export const App = () => {
       .catch(() => {});
 
     const handleLoginSuccess = () => setAuthenticated(true);
-    const handleRefreshNow = () => void fetchCurrent();
+    const handleRefreshNow = () => {
+      void window.electron.ipcRenderer.invoke("poller:start", selectedProvider);
+    };
     const handleOpenSettings = async () => {
       setIsSettingsOpen(true);
       await loadSettings();
@@ -228,7 +254,7 @@ export const App = () => {
         handleThreshold,
       );
     };
-  }, [checkSession, fetchCurrent, setAuthenticated]);
+  }, [checkSession, selectedProvider, setAuthenticated, setSelectedProvider]);
 
   useEffect(() => {
     if (!isDev || !isAuthenticated || didShowAlertPreview) return;
@@ -263,7 +289,12 @@ export const App = () => {
   const activeAlertMessage = thresholdAlertVisible ? thresholdAlertMessage : null;
 
   if (!isAuthenticated) {
-    return <LoginView />;
+    return (
+      <LoginView
+        selectedProvider={selectedProvider}
+        onProviderChange={handleProviderChange}
+      />
+    );
   }
 
   if (isSettingsOpen && !settings) {
@@ -283,6 +314,7 @@ export const App = () => {
         settings={settings}
         isSaving={isSettingsSaving}
         error={settingsError}
+        provider={selectedProvider}
         onClose={() => setIsSettingsOpen(false)}
         onSave={saveSettings}
         onLogout={handleLogout}
@@ -294,6 +326,8 @@ export const App = () => {
   if (selectedSize === "Medium") {
     return (
       <CompactView
+        provider={selectedProvider}
+        onProviderChange={handleProviderChange}
         selectedSize={selectedSize}
         onSizeChange={setSelectedSize}
         isPinned={isPinned}
@@ -311,6 +345,8 @@ export const App = () => {
   if (selectedSize === "Large") {
     return (
       <ExpandedView
+        provider={selectedProvider}
+        onProviderChange={handleProviderChange}
         selectedSize={selectedSize}
         onSizeChange={setSelectedSize}
         isPinned={isPinned}
@@ -327,6 +363,8 @@ export const App = () => {
   }
   return (
     <MiniView
+      provider={selectedProvider}
+      onProviderChange={handleProviderChange}
       selectedSize={selectedSize}
       onSizeChange={setSelectedSize}
       isPinned={isPinned}

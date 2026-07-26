@@ -1,11 +1,12 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { WidgetSettings } from "@shared/types";
+import { ProviderType, WidgetSettings } from "@shared/types";
 import { useUsageData } from "@renderer/hooks/useUsageData";
 
 interface SettingsPanelProps {
   settings: WidgetSettings;
   isSaving: boolean;
   error: string | null;
+  provider: ProviderType;
   onClose: () => void;
   onSave: (next: WidgetSettings) => Promise<void>;
   onLogout: () => Promise<void>;
@@ -87,6 +88,7 @@ export function SettingsPanel({
   settings,
   isSaving,
   error,
+  provider,
   onClose,
   onSave,
   onLogout,
@@ -94,7 +96,7 @@ export function SettingsPanel({
 }: SettingsPanelProps): React.ReactElement {
   const [draft, setDraft] = useState<WidgetSettings>(settings);
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
-  const { usageData } = useUsageData();
+  const { usageData } = useUsageData(provider);
 
   const hasChanges = useMemo(
     () => JSON.stringify(draft) !== JSON.stringify(settings),

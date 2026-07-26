@@ -1,6 +1,6 @@
 import { net, session } from "electron";
 import isDev from "electron-is-dev";
-import { UsageData } from "@shared/types";
+import { ProviderType, UsageData } from "@shared/types";
 import {
   toUsageFetchError,
   UsageFetchError,
@@ -225,10 +225,7 @@ export async function fetchUsageDataFromScraping(
   );
 }
 
-/**
- * Unified interface with automatic fallback
- */
-export async function fetchUsageData(
+async function fetchClaudeUsageData(
   sessionCookie: string,
 ): Promise<UsageData> {
   try {
@@ -273,6 +270,81 @@ export async function fetchUsageData(
       );
     }
   }
+}
+
+async function fetchChatGPTUsageData(
+  sessionCookie: string,
+): Promise<UsageData> {
+  const headers: Record<string, string> = {
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    Accept: "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.5",
+    Referer: "https://chatgpt.com/",
+    Cookie: sessionCookie,
+  };
+
+  const requirementsUrl =
+    "https://chatgpt.com/backend-api/sentinel/chat-requirements";
+  const accountUrl = "https://chatgpt.com/backend-api/accounts/check/v4-2023-04-27";
+
+  const [requirementsResult, accountResult] = await Promise.allSettled([
+    netGet(requirementsUrl, headers),
+    netGet(accountUrl, headers),
+  ]);
+
+  const accountData =
+    accountResult.status === "fulfilled"
+      ? safeParseJson(accountResult.value)
+      : undefined;
+  const requirementsData =
+    requirementsResult.status === "fulfilled"
+      ? safeParseJson(requirementsResult.value)
+      : undefined;
+
+  const parsed = parseChatGPTRequirements(requirementsData);
+  if (!parsed) {
+    throw createTypedError(
+      "parse",
+      "ChatGPT usage response did not include recognizable limit data",
+      requirementsResult.status === "rejected"
+        ? requirementsResult.reason
+        : requirementsData,
+      undefined,
+      requirementsUrl,
+    );
+  }
+
+  const profile = parseChatGPTAccount(accountData);
+  return {
+    provider: "chatgpt",
+    currentUsage: parsed.currentUsage,
+    planLimit: parsed.planLimit,
+    percentageUsed: parsed.percentageUsed,
+    resetTime: parsed.resetTime,
+    sessionActive: parsed.sessionActive,
+    sevenDayUsage: parsed.sevenDayUsage,
+    sevenDayResetTime: parsed.sevenDayResetTime,
+    opusUsage: parsed.opusUsage,
+    sonnetUsage: parsed.sonnetUsage,
+    planType: profile.planType,
+    modelInfo: parsed.modelInfo,
+    userName: profile.userName,
+    timestamp: new Date(),
+  };
+}
+
+/**
+ * Unified interface with automatic fallback
+ */
+export async function fetchUsageData(
+  sessionCookie: string,
+  provider: ProviderType = "claude",
+): Promise<UsageData> {
+  if (provider === "chatgpt") {
+    return fetchChatGPTUsageData(sessionCookie);
+  }
+  return fetchClaudeUsageData(sessionCookie);
 }
 
 /**
@@ -702,11 +774,225 @@ function searchForJsonWithUsageFields(text: string): UsageData | null {
   return null;
 }
 
+function safeParseJson(data: string): unknown {
+  try {
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+}
+
+interface ChatGPTParsedUsage {
+  currentUsage: number;
+  planLimit: number;
+  percentageUsed: number;
+  resetTime: Date | null;
+  sessionActive: boolean;
+  sevenDayUsage: number;
+  sevenDayResetTime: Date;
+  opusUsage: number | null;
+  sonnetUsage: number | null;
+  modelInfo: string;
+}
+
+function parseChatGPTRequirements(data: unknown): ChatGPTParsedUsage | null {
+  if (!data || typeof data !== "object") return null;
+
+  const candidateObjects = collectObjects(data);
+  const usageCandidates: ChatGPTParsedUsage[] = [];
+
+  for (const object of candidateObjects) {
+    const limit =
+      getNum(object, "limit") ??
+      getNum(object, "max") ??
+      getNum(object, "cap") ??
+      getNum(object, "total") ??
+      null;
+    const remaining =
+      getNum(object, "remaining") ??
+      getNum(object, "left") ??
+      getNum(object, "available") ??
+      null;
+    const used =
+      getNum(object, "used") ??
+      getNum(object, "consumed") ??
+      getNum(object, "current_usage") ??
+      null;
+
+    let planLimit = limit;
+    let currentUsage = used;
+
+    if (planLimit === null && remaining !== null && used !== null) {
+      planLimit = remaining + used;
+    }
+    if (currentUsage === null && planLimit !== null && remaining !== null) {
+      currentUsage = Math.max(0, planLimit - remaining);
+    }
+
+    if (
+      planLimit === null ||
+      currentUsage === null ||
+      planLimit <= 0 ||
+      !Number.isFinite(planLimit) ||
+      !Number.isFinite(currentUsage)
+    ) {
+      continue;
+    }
+
+    const rawReset =
+      (object.reset_at as string) ??
+      (object.resetAt as string) ??
+      (object.resets_at as string) ??
+      (object.resetsAt as string) ??
+      null;
+    const reset = parseDateOrNull(rawReset);
+
+    const weeklyCap =
+      getNum(object, "weekly_limit") ??
+      getNum(object, "weekly_cap") ??
+      getNum(object, "seven_day_limit") ??
+      null;
+    const weeklyUsed =
+      getNum(object, "weekly_used") ??
+      getNum(object, "seven_day_used") ??
+      null;
+    const weeklyResetRaw =
+      (object.weekly_reset_at as string) ??
+      (object.seven_day_reset_at as string) ??
+      null;
+    const weeklyReset = parseDateOrNull(weeklyResetRaw);
+
+    const pct = Math.max(0, Math.min(100, (currentUsage / planLimit) * 100));
+    const sevenDayUsage =
+      weeklyCap && weeklyCap > 0 && weeklyUsed !== null
+        ? Math.max(0, Math.min(100, (weeklyUsed / weeklyCap) * 100))
+        : pct;
+
+    const modelName =
+      (object.model as string) ??
+      (object.tier as string) ??
+      (object.plan as string) ??
+      "chatgpt.com";
+
+    usageCandidates.push({
+      currentUsage,
+      planLimit,
+      percentageUsed: pct,
+      resetTime: reset,
+      sessionActive: reset !== null,
+      sevenDayUsage,
+      sevenDayResetTime: weeklyReset ?? getDefaultResetTime(7 * 24),
+      opusUsage: null,
+      sonnetUsage: null,
+      modelInfo: modelName,
+    });
+  }
+
+  if (usageCandidates.length === 0) return null;
+
+  usageCandidates.sort((a, b) => b.planLimit - a.planLimit);
+  const primary = usageCandidates[0];
+
+  const modelBreakdown = parseChatGPTModelBreakdown(candidateObjects);
+  if (modelBreakdown) {
+    primary.opusUsage = modelBreakdown.primaryModelPct;
+    primary.sonnetUsage = modelBreakdown.secondaryModelPct;
+    primary.modelInfo = modelBreakdown.modelInfo;
+  }
+
+  if (!primary.resetTime) {
+    primary.resetTime = getDefaultResetTime(3);
+    primary.sessionActive = true;
+  }
+
+  return primary;
+}
+
+function parseChatGPTModelBreakdown(
+  candidates: Record<string, unknown>[],
+): {
+  primaryModelPct: number;
+  secondaryModelPct: number;
+  modelInfo: string;
+} | null {
+  type ModelEntry = { name: string; pct: number };
+  const models: ModelEntry[] = [];
+
+  for (const object of candidates) {
+    const modelName =
+      (object.model as string) ??
+      (object.slug as string) ??
+      (object.name as string) ??
+      null;
+    const used = getNum(object, "used") ?? getNum(object, "consumed") ?? null;
+    const limit = getNum(object, "limit") ?? getNum(object, "max") ?? null;
+    if (!modelName || used === null || limit === null || limit <= 0) continue;
+    const pct = Math.max(0, Math.min(100, (used / limit) * 100));
+    models.push({ name: modelName, pct });
+  }
+
+  if (models.length === 0) return null;
+  models.sort((a, b) => b.pct - a.pct);
+  return {
+    primaryModelPct: Math.round(models[0]?.pct ?? 0),
+    secondaryModelPct: Math.round(models[1]?.pct ?? 0),
+    modelInfo: models
+      .slice(0, 2)
+      .map((entry) => entry.name)
+      .join(", "),
+  };
+}
+
+function parseChatGPTAccount(data: unknown): { userName: string; planType: string } {
+  if (!data || typeof data !== "object") {
+    return { userName: "ChatGPT User", planType: "Unknown" };
+  }
+  const candidates = collectObjects(data);
+  for (const object of candidates) {
+    const userName =
+      (object.name as string) ??
+      (object.display_name as string) ??
+      (object.email as string) ??
+      null;
+    const planType =
+      (object.plan_type as string) ??
+      (object.plan as string) ??
+      (object.subscription as string) ??
+      (object.account_plan as string) ??
+      null;
+    if (userName || planType) {
+      return {
+        userName: userName ?? "ChatGPT User",
+        planType: planType ?? "Unknown",
+      };
+    }
+  }
+  return { userName: "ChatGPT User", planType: "Unknown" };
+}
+
+function collectObjects(value: unknown): Record<string, unknown>[] {
+  if (!value || typeof value !== "object") return [];
+  const stack: unknown[] = [value];
+  const objects: Record<string, unknown>[] = [];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current || typeof current !== "object") continue;
+    if (Array.isArray(current)) {
+      for (const item of current) stack.push(item);
+      continue;
+    }
+    const record = current as Record<string, unknown>;
+    objects.push(record);
+    for (const nested of Object.values(record)) stack.push(nested);
+  }
+  return objects;
+}
+
 /**
  * Get default reset time (24 hours from now)
  */
-function getDefaultResetTime(): Date {
+function getDefaultResetTime(hoursFromNow: number = 24): Date {
   const resetTime = new Date();
-  resetTime.setHours(resetTime.getHours() + 24);
+  resetTime.setHours(resetTime.getHours() + hoursFromNow);
   return resetTime;
 }

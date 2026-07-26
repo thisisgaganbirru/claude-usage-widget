@@ -60,17 +60,16 @@ export interface IpcMessage {
   data?: any;
 }
 
-export type LoginFailureReason =
-  | "cancelled"
-  | "token_missing"
-  | "login_failed";
+export type LoginFailureReason = "cancelled" | "token_missing" | "login_failed";
 
 export interface AuthExpiredEvent {
+  provider: ProviderType;
   reason: "missing_session" | "server_auth_failed";
   message: string;
 }
 
 export interface ThresholdCrossedEvent {
+  provider: ProviderType;
   threshold: number;
   percentage: number;
   scope: "session" | "weekly";

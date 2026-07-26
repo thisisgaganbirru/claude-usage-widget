@@ -131,7 +131,8 @@ export class TrayManager {
     }
 
     // Update tooltip with current usage
-    const tooltip = `Claude Usage\n${usageData.currentUsage}/${usageData.planLimit} (${usageData.percentageUsed.toFixed(1)}%)`;
+    const providerLabel = usageData.provider === "chatgpt" ? "ChatGPT" : "Claude";
+    const tooltip = `${providerLabel} Usage\n${usageData.currentUsage}/${usageData.planLimit} (${usageData.percentageUsed.toFixed(1)}%)`;
     this.tray.setToolTip(tooltip);
   }
 
