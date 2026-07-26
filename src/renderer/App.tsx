@@ -12,7 +12,7 @@ const isDev = process.env.NODE_ENV === "development";
 
 declare global {
   interface Window {
-    electron: {
+    electron?: {
       ipcRenderer: {
         invoke: (channel: string, ...args: any[]) => Promise<any>;
         send: (channel: string, ...args: any[]) => void;
@@ -42,6 +42,7 @@ export const App = () => {
     isAuthenticated,
     setAuthenticated,
     checkSession,
+    loadAccounts,
   } = useAuthStore();
   const [selectedSize, setSelectedSize] = useState<SizeOption>("Small");
   const [isPinned, setIsPinned] = useState(true);
@@ -81,9 +82,12 @@ export const App = () => {
 
   const loadSettings = async () => {
     try {
+      const ipc = window.electron?.ipcRenderer;
+      if (!ipc) {
+        throw new Error("Settings are available inside the desktop app.");
+      }
       setSettingsError(null);
-      const nextSettings =
-        await window.electron.ipcRenderer.invoke("settings:get");
+      const nextSettings = await ipc.invoke("settings:get");
       setSettings(nextSettings);
     } catch (error) {
       const message =
@@ -96,7 +100,11 @@ export const App = () => {
     setIsSettingsSaving(true);
     setSettingsError(null);
     try {
-      const result = await window.electron.ipcRenderer.invoke(
+      const ipc = window.electron?.ipcRenderer;
+      if (!ipc) {
+        throw new Error("Settings are available inside the desktop app.");
+      }
+      const result = await ipc.invoke(
         "settings:update",
         nextSettings,
       );
@@ -117,32 +125,33 @@ export const App = () => {
   const handleProviderChange = async (provider: ProviderType) => {
     setSelectedProvider(provider);
     const authed = await checkSession(provider);
-    if (authed) {
-      void window.electron.ipcRenderer.invoke("poller:start", provider);
+    const ipc = window.electron?.ipcRenderer;
+    if (authed && ipc) {
+      void ipc.invoke("poller:start", provider);
     }
   };
 
   const handleLogout = async () => {
-    await window.electron.ipcRenderer
+    await window.electron?.ipcRenderer
       .invoke("auth:logout", selectedProvider)
       .catch(() => {});
     setAuthenticated(false, selectedProvider);
   };
 
   const handleHardLogout = async () => {
-    await window.electron.ipcRenderer
+    await window.electron?.ipcRenderer
       .invoke("auth:logoutEverywhere")
       .catch(() => {});
     setAuthenticated(false);
   };
 
   const handleRemove = () => {
-    void window.electron.ipcRenderer.invoke("app:quit").catch(() => {});
+    void window.electron?.ipcRenderer.invoke("app:quit").catch(() => {});
   };
 
   const handleTogglePin = (pinned: boolean) => {
     setIsPinned(pinned);
-    void window.electron.ipcRenderer
+    void window.electron?.ipcRenderer
       .invoke("window:setPinned", pinned)
       .catch(() => {});
   };
@@ -168,20 +177,22 @@ export const App = () => {
   }, []);
 
   useEffect(() => {
+    const ipc = window.electron?.ipcRenderer;
+    if (!ipc) return;
     if (!isAuthenticated) {
-      void window.electron.ipcRenderer
+      void ipc
         .invoke("resize-window", 800, 600)
         .catch(() => {});
       return;
     }
     if (isSettingsOpen) {
-      void window.electron.ipcRenderer
+      void ipc
         .invoke("resize-window", SETTINGS_WINDOW_SIZE[0], SETTINGS_WINDOW_SIZE[1])
         .catch(() => {});
       return;
     }
     const [w, h] = WINDOW_SIZES[selectedSize];
-    void window.electron.ipcRenderer
+    void ipc
       .invoke("resize-window", w, h)
       .catch((error) => {
         console.error("[App] Failed to resize window:", error);
@@ -189,21 +200,23 @@ export const App = () => {
   }, [selectedSize, isAuthenticated, isSettingsOpen]);
 
   useEffect(() => {
+    const ipc = window.electron?.ipcRenderer;
+    void loadAccounts("claude");
+    void loadAccounts("chatgpt");
     void Promise.all([checkSession("claude"), checkSession("chatgpt")]).then(
       ([claudeAuthed, chatgptAuthed]) => {
-        const provider = claudeAuthed
-          ? "claude"
-          : chatgptAuthed
-            ? "chatgpt"
-            : "claude";
+        if (!claudeAuthed && !chatgptAuthed) return;
+        const provider = claudeAuthed ? "claude" : "chatgpt";
         setSelectedProvider(provider);
-        if (claudeAuthed || chatgptAuthed) {
-          void window.electron.ipcRenderer.invoke("poller:start", provider);
+        if (ipc) {
+          void ipc.invoke("poller:start", provider);
         }
       },
     );
 
-    void window.electron.ipcRenderer
+    if (!ipc) return;
+
+    void ipc
       .invoke("window:getPinned")
       .then((result) => {
         if (typeof result?.pinned === "boolean") setIsPinned(result.pinned);
@@ -212,7 +225,7 @@ export const App = () => {
 
     const handleLoginSuccess = () => setAuthenticated(true);
     const handleRefreshNow = () => {
-      void window.electron.ipcRenderer.invoke("poller:start", selectedProvider);
+      void ipc.invoke("poller:start", selectedProvider);
     };
     const handleOpenSettings = async () => {
       setIsSettingsOpen(true);
@@ -231,30 +244,30 @@ export const App = () => {
       }
     };
 
-    window.electron.ipcRenderer.on("auth:login-success", handleLoginSuccess);
-    window.electron.ipcRenderer.on("action:refreshNow", handleRefreshNow);
-    window.electron.ipcRenderer.on("action:openSettings", handleOpenSettings);
-    window.electron.ipcRenderer.on("notification:threshold", handleThreshold);
+    ipc.on("auth:login-success", handleLoginSuccess);
+    ipc.on("action:refreshNow", handleRefreshNow);
+    ipc.on("action:openSettings", handleOpenSettings);
+    ipc.on("notification:threshold", handleThreshold);
 
     return () => {
-      window.electron.ipcRenderer.removeListener(
+      ipc.removeListener(
         "auth:login-success",
         handleLoginSuccess,
       );
-      window.electron.ipcRenderer.removeListener(
+      ipc.removeListener(
         "action:refreshNow",
         handleRefreshNow,
       );
-      window.electron.ipcRenderer.removeListener(
+      ipc.removeListener(
         "action:openSettings",
         handleOpenSettings,
       );
-      window.electron.ipcRenderer.removeListener(
+      ipc.removeListener(
         "notification:threshold",
         handleThreshold,
       );
     };
-  }, [checkSession, selectedProvider, setAuthenticated, setSelectedProvider]);
+  }, [checkSession, loadAccounts, selectedProvider, setAuthenticated, setSelectedProvider]);
 
   useEffect(() => {
     if (!isDev || !isAuthenticated || didShowAlertPreview) return;

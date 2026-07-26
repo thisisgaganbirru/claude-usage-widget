@@ -12,9 +12,12 @@ import { UsagePoller } from "@main/data/usage-poller";
 import { openLoginWindow } from "@main/auth/login-window";
 import {
   SessionManager,
+  clearAllSessions,
   clearSession,
   clearSessionCookies,
   isLoggedIn,
+  listAccounts,
+  setActiveAccount,
 } from "@main/auth/session-manager";
 import { clearOrgIdCache } from "@main/data/usage-fetcher";
 import { SettingsManager } from "@main/settings/settings-manager";
@@ -81,13 +84,14 @@ function showThresholdNotification(event: ThresholdCrossedEvent): void {
   if (!Notification.isSupported()) return;
 
   const roundedUsage = Math.round(event.percentage);
+  const providerLabel = event.provider === "chatgpt" ? "ChatGPT" : "Claude";
   const body =
     event.scope === "weekly"
       ? `Your weekly limit crossed ${event.threshold}%. Use wisely.`
       : `Current session usage reached ${roundedUsage}% (alert threshold ${event.threshold}%).`;
 
   const notification = new Notification({
-    title: "Claude Usage Alert",
+    title: `${providerLabel} Usage Alert`,
     body,
     silent: false,
   });
@@ -164,7 +168,7 @@ export function registerIPCHandlers(
       }
       clearSession(provider);
       if (provider === "claude") clearOrgIdCache();
-      if (usagePoller?.getProvider() === provider) usagePoller.stop();
+      usagePoller?.stop(provider);
       return { success: true, provider };
     },
   );
@@ -178,8 +182,8 @@ export function registerIPCHandlers(
         `[IPC] ${IPC_INVOKE_CHANNELS.AUTH_LOGOUT_EVERYWHERE} requested`,
       );
     }
-    clearSession("claude");
-    clearSession("chatgpt");
+    clearAllSessions("claude");
+    clearAllSessions("chatgpt");
     clearOrgIdCache();
     await clearSessionCookies("claude");
     await clearSessionCookies("chatgpt");
@@ -192,10 +196,34 @@ export function registerIPCHandlers(
     async (_event, providerInput?: ProviderType) => {
       const provider = resolveProvider(providerInput);
       const isAuthenticated = isLoggedIn(provider);
-      if (isAuthenticated && usagePoller && usagePoller.getProvider() === provider) {
-        if (!usagePoller.isActive()) usagePoller.start(provider);
+      if (isAuthenticated && usagePoller && !usagePoller.isActive(provider)) {
+        usagePoller.start(provider);
       }
       return { provider, isAuthenticated };
+    },
+  );
+
+  ipcMain.handle(
+    IPC_INVOKE_CHANNELS.AUTH_LIST_ACCOUNTS,
+    (_event, providerInput?: ProviderType) => {
+      const provider =
+        providerInput === "claude" || providerInput === "chatgpt"
+          ? providerInput
+          : undefined;
+      return { provider, accounts: listAccounts(provider) };
+    },
+  );
+
+  ipcMain.handle(
+    IPC_INVOKE_CHANNELS.AUTH_SET_ACTIVE_ACCOUNT,
+    (_event, providerInput: ProviderType, accountId: string) => {
+      const provider = resolveProvider(providerInput);
+      const success = setActiveAccount(provider, accountId);
+      if (success) {
+        usagePoller?.stop(provider);
+        usagePoller?.start(provider);
+      }
+      return { success, provider, accountId };
     },
   );
 
@@ -213,10 +241,9 @@ export function registerIPCHandlers(
     (_event, providerInput?: ProviderType) => {
       const provider = resolveProvider(providerInput);
       if (!usagePoller) return { success: false, isActive: false };
-      usagePoller.setProvider(provider);
-      if (!usagePoller.isActive()) usagePoller.start(provider);
+      if (!usagePoller.isActive(provider)) usagePoller.start(provider);
       else void usagePoller.refreshNow(provider);
-      return { success: true, isActive: usagePoller.isActive(), provider };
+      return { success: true, isActive: usagePoller.isActive(provider), provider };
     },
   );
 
@@ -328,17 +355,17 @@ export function registerIPCHandlers(
     mainWindow.webContents.send(IPC_ON_CHANNELS.AUTH_EXPIRED, event);
   });
 
-  usagePoller.on("pollError", (error) => {
+  usagePoller.on("pollError", (event: { provider: ProviderType; error: Error }) => {
     mainWindow.webContents.send(IPC_ON_CHANNELS.POLLER_ERROR, {
-      provider: usagePoller?.getProvider() ?? "claude",
-      error: error instanceof Error ? error.message : "Unknown error",
+      provider: event.provider,
+      error: event.error.message,
     });
   });
 
   // Kick off current provider if any saved session exists.
   if (SessionManager.hasAnySession()) {
     if (SessionManager.isAuthenticated("claude")) usagePoller.start("claude");
-    else if (SessionManager.isAuthenticated("chatgpt")) usagePoller.start("chatgpt");
+    if (SessionManager.isAuthenticated("chatgpt")) usagePoller.start("chatgpt");
   }
 }
 

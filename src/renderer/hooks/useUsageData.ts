@@ -28,6 +28,8 @@ export function useUsageData(provider: ProviderType): ProviderUsageState {
 
   useEffect(() => {
     void usageStore.fetchCurrent(provider);
+    const ipc = window.electron?.ipcRenderer;
+    if (!ipc) return;
 
     const handleUsageUpdate = (data: { usageData: UsageData }) => {
       if (!data?.usageData || data.usageData.provider !== provider) return;
@@ -54,20 +56,20 @@ export function useUsageData(provider: ProviderType): ProviderUsageState {
       );
     };
 
-    window.electron.ipcRenderer.on("usage:updated", handleUsageUpdate);
-    window.electron.ipcRenderer.on("poller:error", handlePollError);
-    window.electron.ipcRenderer.on("auth:expired", handleAuthExpired);
+    ipc.on("usage:updated", handleUsageUpdate);
+    ipc.on("poller:error", handlePollError);
+    ipc.on("auth:expired", handleAuthExpired);
 
     return () => {
-      window.electron.ipcRenderer.removeListener(
+      ipc.removeListener(
         "usage:updated",
         handleUsageUpdate,
       );
-      window.electron.ipcRenderer.removeListener(
+      ipc.removeListener(
         "poller:error",
         handlePollError,
       );
-      window.electron.ipcRenderer.removeListener(
+      ipc.removeListener(
         "auth:expired",
         handleAuthExpired,
       );

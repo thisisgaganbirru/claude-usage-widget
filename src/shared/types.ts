@@ -43,6 +43,16 @@ export interface AuthState {
   expiresAt: number | null;
 }
 
+export interface ProviderAccount {
+  id: string;
+  provider: ProviderType;
+  displayName: string;
+  email?: string;
+  isActive: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface WidgetSettings {
   pollingInterval: number; // in seconds (30-300)
   notificationThresholds: number[]; // [50, 75, 90, 95]

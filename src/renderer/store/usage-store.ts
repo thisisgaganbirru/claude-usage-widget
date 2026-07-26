@@ -86,7 +86,17 @@ export const useUsageStore = create<UsageStoreState>((set, get) => ({
     get().setLoading(provider, true);
     get().setError(provider, null);
     try {
-      const result = await window.electron.ipcRenderer.invoke(
+      const ipc = window.electron?.ipcRenderer;
+      if (!ipc) {
+        const fallback = createDefaultUsageData(provider);
+        set((state) => ({
+          usageByProvider: { ...state.usageByProvider, [provider]: fallback },
+          isLoadingByProvider: { ...state.isLoadingByProvider, [provider]: false },
+        }));
+        return;
+      }
+
+      const result = await ipc.invoke(
         "usage:getCurrent",
         provider,
       );

@@ -7,6 +7,8 @@ export const IPC_INVOKE_CHANNELS = {
   AUTH_LOGOUT: "auth:logout",
   AUTH_LOGOUT_EVERYWHERE: "auth:logoutEverywhere",
   AUTH_CHECK_SESSION: "auth:checkSession",
+  AUTH_LIST_ACCOUNTS: "auth:listAccounts",
+  AUTH_SET_ACTIVE_ACCOUNT: "auth:setActiveAccount",
   USAGE_GET_CURRENT: "usage:getCurrent",
   POLLER_START: "poller:start",
   POLLER_STOP: "poller:stop",
