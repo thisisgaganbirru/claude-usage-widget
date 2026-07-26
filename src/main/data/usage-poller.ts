@@ -10,21 +10,36 @@ import { fetchUsageData } from "./usage-fetcher";
 import { SessionManager } from "@main/auth/session-manager";
 import { SettingsManager } from "@main/settings/settings-manager";
 
-export class UsagePoller extends EventEmitter {
-  private pollingTimeout: ReturnType<typeof setTimeout> | null = null;
-  private pollDuration: number = 60000;
-  private isPolling: boolean = false;
-  private isPollInFlight: boolean = false;
-  private transientFailureCount: number = 0;
-  private activeProvider: ProviderType = "claude";
-  private lastUsageDataByProvider: Partial<Record<ProviderType, UsageData>> = {};
-  private notifiedSessionThresholdsByProvider: Record<ProviderType, Set<number>> = {
-    claude: new Set(),
-    chatgpt: new Set(),
+const PROVIDERS: ProviderType[] = ["claude", "chatgpt"];
+
+interface ProviderPollState {
+  pollingTimeout: ReturnType<typeof setTimeout> | null;
+  isPolling: boolean;
+  isPollInFlight: boolean;
+  transientFailureCount: number;
+  lastUsageData: UsageData | null;
+  notifiedSessionThresholds: Set<number>;
+  notifiedWeeklyThresholds: Set<number>;
+}
+
+function createProviderState(): ProviderPollState {
+  return {
+    pollingTimeout: null,
+    isPolling: false,
+    isPollInFlight: false,
+    transientFailureCount: 0,
+    lastUsageData: null,
+    notifiedSessionThresholds: new Set(),
+    notifiedWeeklyThresholds: new Set(),
   };
-  private notifiedWeeklyThresholdsByProvider: Record<ProviderType, Set<number>> = {
-    claude: new Set(),
-    chatgpt: new Set(),
+}
+
+export class UsagePoller extends EventEmitter {
+  private pollDuration: number = 60000;
+  private activeProvider: ProviderType = "claude";
+  private providerStates: Record<ProviderType, ProviderPollState> = {
+    claude: createProviderState(),
+    chatgpt: createProviderState(),
   };
 
   constructor(pollDurationSeconds: number = 60) {
@@ -42,30 +57,34 @@ export class UsagePoller extends EventEmitter {
   }
 
   start(provider?: ProviderType): void {
-    if (provider) this.setProvider(provider);
-    if (this.isPolling) {
-      if (isDev) console.log("[UsagePoller] Polling already in progress");
+    const target = provider ?? this.activeProvider;
+    this.setProvider(target);
+    const state = this.providerStates[target];
+
+    if (state.isPolling) {
+      if (isDev) console.log(`[UsagePoller] ${target} polling already active`);
       return;
     }
 
     if (isDev) {
       console.log(
-        `[UsagePoller] Starting polling for ${this.activeProvider} (interval: ${this.pollDuration}ms)`,
+        `[UsagePoller] Starting polling for ${target} (interval: ${this.pollDuration}ms)`,
       );
     }
-    this.isPolling = true;
-    this.transientFailureCount = 0;
-    this.scheduleNextPoll(0);
+    state.isPolling = true;
+    state.transientFailureCount = 0;
+    this.scheduleNextPoll(target, 0);
   }
 
-  stop(): void {
-    if (isDev) console.log("[UsagePoller] Stopping polling");
-    this.clearScheduledPoll();
-    this.isPolling = false;
-    this.isPollInFlight = false;
-    this.transientFailureCount = 0;
-    this.notifiedSessionThresholdsByProvider[this.activeProvider].clear();
-    this.notifiedWeeklyThresholdsByProvider[this.activeProvider].clear();
+  stop(provider?: ProviderType): void {
+    if (provider) {
+      this.stopProvider(provider);
+      return;
+    }
+
+    for (const target of PROVIDERS) {
+      this.stopProvider(target);
+    }
   }
 
   setPollingInterval(seconds: number): void {
@@ -75,23 +94,52 @@ export class UsagePoller extends EventEmitter {
       );
       return;
     }
+
     this.pollDuration = seconds * 1000;
-    if (this.isPolling) this.scheduleNextPoll(this.pollDuration);
+    for (const provider of PROVIDERS) {
+      if (this.providerStates[provider].isPolling) {
+        this.scheduleNextPoll(provider, this.pollDuration);
+      }
+    }
   }
 
   async refreshNow(provider?: ProviderType): Promise<void> {
-    if (provider) this.setProvider(provider);
-    if (!this.isPolling) {
-      await this.poll(true);
+    const target = provider ?? this.activeProvider;
+    this.setProvider(target);
+    const state = this.providerStates[target];
+    if (!state.isPolling) {
+      await this.poll(target, true);
       return;
     }
-    this.scheduleNextPoll(0);
+    this.scheduleNextPoll(target, 0);
   }
 
-  private async poll(force: boolean = false): Promise<void> {
-    if ((!this.isPolling && !force) || this.isPollInFlight) return;
-    this.isPollInFlight = true;
-    const provider = this.activeProvider;
+  getLastUsageData(provider: ProviderType): UsageData | null {
+    return this.providerStates[provider].lastUsageData;
+  }
+
+  isActive(provider?: ProviderType): boolean {
+    if (provider) return this.providerStates[provider].isPolling;
+    return PROVIDERS.some((target) => this.providerStates[target].isPolling);
+  }
+
+  private stopProvider(provider: ProviderType): void {
+    const state = this.providerStates[provider];
+    if (isDev && state.isPolling) {
+      console.log(`[UsagePoller] Stopping polling for ${provider}`);
+    }
+    this.clearScheduledPoll(provider);
+    state.isPolling = false;
+    state.isPollInFlight = false;
+    state.transientFailureCount = 0;
+    state.notifiedSessionThresholds.clear();
+    state.notifiedWeeklyThresholds.clear();
+  }
+
+  private async poll(provider: ProviderType, force: boolean = false): Promise<void> {
+    const state = this.providerStates[provider];
+    if ((!state.isPolling && !force) || state.isPollInFlight) return;
+    state.isPollInFlight = true;
     let nextDelay = this.pollDuration;
 
     try {
@@ -103,15 +151,15 @@ export class UsagePoller extends EventEmitter {
           message: `No saved ${provider} session token was found.`,
         };
         this.emit("authExpired", event);
-        this.stop();
+        this.stopProvider(provider);
         return;
       }
 
       const usageData = await fetchUsageData(sessionCookie, provider);
-      this.lastUsageDataByProvider[provider] = usageData;
+      state.lastUsageData = usageData;
       this.emit("usageUpdate", usageData);
       this.checkThresholds(usageData);
-      this.transientFailureCount = 0;
+      state.transientFailureCount = 0;
 
       if (isDev) {
         console.log(
@@ -135,51 +183,54 @@ export class UsagePoller extends EventEmitter {
               : "Session expired on Claude.ai. Please log in again.",
         };
         this.emit("authExpired", event);
-        this.stop();
+        this.stopProvider(provider);
         return;
       }
 
       console.error(`[UsagePoller] ${provider} poll failed:`, message);
-      this.transientFailureCount += 1;
-      nextDelay = this.getRetryDelayMs();
-      this.emit(
-        "pollError",
-        new Error(`${message} (retrying in ${Math.round(nextDelay / 1000)}s)`),
-      );
+      state.transientFailureCount += 1;
+      nextDelay = this.getRetryDelayMs(state.transientFailureCount);
+      this.emit("pollError", {
+        provider,
+        error: new Error(`${message} (retrying in ${Math.round(nextDelay / 1000)}s)`),
+      });
     } finally {
-      this.isPollInFlight = false;
-      if (this.isPolling && !force) {
-        this.scheduleNextPoll(nextDelay);
+      state.isPollInFlight = false;
+      if (state.isPolling && !force) {
+        this.scheduleNextPoll(provider, nextDelay);
       }
     }
   }
 
-  private getRetryDelayMs(): number {
+  private getRetryDelayMs(transientFailureCount: number): number {
     const baseMs = 5000;
-    const exponent = Math.max(0, this.transientFailureCount - 1);
+    const exponent = Math.max(0, transientFailureCount - 1);
     const backoffMs = baseMs * Math.pow(2, exponent);
     return Math.min(backoffMs, 300000);
   }
 
-  private clearScheduledPoll(): void {
-    if (!this.pollingTimeout) return;
-    clearTimeout(this.pollingTimeout);
-    this.pollingTimeout = null;
+  private clearScheduledPoll(provider: ProviderType): void {
+    const state = this.providerStates[provider];
+    if (!state.pollingTimeout) return;
+    clearTimeout(state.pollingTimeout);
+    state.pollingTimeout = null;
   }
 
-  private scheduleNextPoll(delayMs: number): void {
-    this.clearScheduledPoll();
-    if (!this.isPolling) return;
-    this.pollingTimeout = setTimeout(() => {
-      void this.poll();
+  private scheduleNextPoll(provider: ProviderType, delayMs: number): void {
+    const state = this.providerStates[provider];
+    this.clearScheduledPoll(provider);
+    if (!state.isPolling) return;
+    state.pollingTimeout = setTimeout(() => {
+      void this.poll(provider);
     }, delayMs);
   }
 
   private checkThresholds(usageData: UsageData): void {
     const settings = SettingsManager.get();
+    const state = this.providerStates[usageData.provider];
     if (!settings.enableDesktopNotifications && !settings.enableBannerNotifications) {
-      this.notifiedSessionThresholdsByProvider[usageData.provider].clear();
-      this.notifiedWeeklyThresholdsByProvider[usageData.provider].clear();
+      state.notifiedSessionThresholds.clear();
+      state.notifiedWeeklyThresholds.clear();
       return;
     }
 
@@ -200,21 +251,21 @@ export class UsagePoller extends EventEmitter {
     usageData: UsageData,
     sessionThresholds: number[],
   ): void {
-    const notified = this.notifiedSessionThresholdsByProvider[usageData.provider];
+    const state = this.providerStates[usageData.provider];
     if (sessionThresholds.length === 0) {
-      notified.clear();
+      state.notifiedSessionThresholds.clear();
       return;
     }
 
     const configuredThresholds = new Set(sessionThresholds);
-    notified.forEach((value) => {
-      if (!configuredThresholds.has(value)) notified.delete(value);
+    state.notifiedSessionThresholds.forEach((value) => {
+      if (!configuredThresholds.has(value)) state.notifiedSessionThresholds.delete(value);
     });
 
     const percentage = usageData.percentageUsed;
     for (const threshold of sessionThresholds) {
-      if (percentage >= threshold && !notified.has(threshold)) {
-        notified.add(threshold);
+      if (percentage >= threshold && !state.notifiedSessionThresholds.has(threshold)) {
+        state.notifiedSessionThresholds.add(threshold);
         const event: ThresholdCrossedEvent = {
           provider: usageData.provider,
           threshold,
@@ -226,28 +277,28 @@ export class UsagePoller extends EventEmitter {
       }
     }
 
-    if (percentage < sessionThresholds[0]) notified.clear();
+    if (percentage < sessionThresholds[0]) state.notifiedSessionThresholds.clear();
   }
 
   private checkWeeklyThresholds(
     usageData: UsageData,
     weeklyThresholds: number[],
   ): void {
-    const notified = this.notifiedWeeklyThresholdsByProvider[usageData.provider];
+    const state = this.providerStates[usageData.provider];
     if (weeklyThresholds.length === 0) {
-      notified.clear();
+      state.notifiedWeeklyThresholds.clear();
       return;
     }
 
     const configuredThresholds = new Set(weeklyThresholds);
-    notified.forEach((value) => {
-      if (!configuredThresholds.has(value)) notified.delete(value);
+    state.notifiedWeeklyThresholds.forEach((value) => {
+      if (!configuredThresholds.has(value)) state.notifiedWeeklyThresholds.delete(value);
     });
 
     const percentage = Math.min(100, Math.max(0, usageData.sevenDayUsage));
     for (const threshold of weeklyThresholds) {
-      if (percentage >= threshold && !notified.has(threshold)) {
-        notified.add(threshold);
+      if (percentage >= threshold && !state.notifiedWeeklyThresholds.has(threshold)) {
+        state.notifiedWeeklyThresholds.add(threshold);
         const event: ThresholdCrossedEvent = {
           provider: usageData.provider,
           threshold,
@@ -259,14 +310,6 @@ export class UsagePoller extends EventEmitter {
       }
     }
 
-    if (percentage < weeklyThresholds[0]) notified.clear();
-  }
-
-  getLastUsageData(provider: ProviderType): UsageData | null {
-    return this.lastUsageDataByProvider[provider] ?? null;
-  }
-
-  isActive(): boolean {
-    return this.isPolling;
+    if (percentage < weeklyThresholds[0]) state.notifiedWeeklyThresholds.clear();
   }
 }
