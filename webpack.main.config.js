@@ -26,7 +26,7 @@ module.exports = {
     // Copy preload.js to output directory after webpack build
     {
       apply: (compiler) => {
-        compiler.hooks.afterEmit.tap("CopyPreloadPlugin", (compilation) => {
+        compiler.hooks.afterEmit.tap("CopyPreloadPlugin", () => {
           const fs = require("fs");
           const path = require("path");
 

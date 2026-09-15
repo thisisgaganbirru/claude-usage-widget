@@ -1,9 +1,18 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, extname } from "node:path";
+import { join, extname, relative } from "node:path";
 
 const ROOT_DIR = process.cwd();
 const SOURCE_DIR = join(ROOT_DIR, "src");
 const ALLOWED_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".css"]);
+
+/**
+ * Files allowed to spell IPC channel names as string literals: the single
+ * source of truth, and the preload fallback list that mirrors it.
+ */
+const IPC_LITERAL_ALLOWLIST = new Set([
+  "src/shared/ipc-channels.ts",
+  "src/preload/preload.js",
+]);
 
 const RULES = [
   {
@@ -15,6 +24,14 @@ const RULES = [
     id: "no-inline-style-prop",
     pattern: /\bstyle=\{\{/g,
     message: "Inline React styles are not allowed. Use Tailwind classes.",
+  },
+  {
+    id: "no-ipc-channel-literal",
+    pattern:
+      /["'](?:auth|usage|poller|settings|app|window|action|notification|ipc|provider):[A-Za-z-]+["']|["'](?:resize-window|set-ignore-mouse-events)["']/g,
+    message:
+      "IPC channel names must come from src/shared/ipc-channels.ts, not string literals.",
+    exclude: IPC_LITERAL_ALLOWLIST,
   },
 ];
 
@@ -50,13 +67,15 @@ function run() {
   const violations = [];
 
   for (const file of files) {
+    const relPath = relative(ROOT_DIR, file).split("\\").join("/");
     const content = readFileSync(file, "utf8");
     for (const rule of RULES) {
+      if (rule.exclude?.has(relPath)) continue;
       rule.pattern.lastIndex = 0;
       let match = rule.pattern.exec(content);
       while (match) {
         violations.push({
-          file,
+          file: relPath,
           line: lineNumberForOffset(content, match.index),
           ruleId: rule.id,
           message: rule.message,
