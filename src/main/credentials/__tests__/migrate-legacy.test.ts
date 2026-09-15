@@ -9,7 +9,9 @@ import {
 } from "../credential-store";
 import {
   LEGACY_INSTALL_ID_FILE,
+  credentialIdForAccount,
   credentialIdForLegacyFile,
+  legacySessionFileName,
   migrateLegacyCredentials,
 } from "../migrate-legacy";
 
@@ -220,5 +222,33 @@ describe("migrateLegacyCredentials", () => {
     expect(first.migrated).toEqual(["claude-default"]);
     expect(second).toEqual({ migrated: [], removed: [], skipped: [] });
     expect(store.read("claude-default")).toBe("good-cookie");
+  });
+});
+
+describe("credentialIdForAccount", () => {
+  it("matches the id the legacy file for that account migrates to", () => {
+    const cases: Array<[string, string]> = [
+      ["claude", "default"],
+      ["chatgpt", "default"],
+      ["claude", "claude-a1b2c3d4e5f6"],
+      ["chatgpt", "chatgpt-0f1e2d3c4b5a"],
+    ];
+
+    for (const [provider, accountId] of cases) {
+      const fromLegacy = credentialIdForLegacyFile(
+        legacySessionFileName(provider, accountId),
+      );
+      expect(fromLegacy).toBe(credentialIdForAccount(provider, accountId));
+    }
+  });
+
+  it("keeps a crafted account id inside the credentials directory", () => {
+    const traversal = credentialIdForAccount("claude", "../../.ssh/id_rsa");
+    expect(traversal).not.toContain("/");
+    expect(traversal).not.toContain("..");
+
+    const windowsTraversal = credentialIdForAccount("claude", "..\\..\\x");
+    expect(windowsTraversal).not.toContain("\\");
+    expect(windowsTraversal).not.toContain("..");
   });
 });

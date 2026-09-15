@@ -49,7 +49,12 @@ export interface WidgetSettings {
   theme: "light" | "dark" | "auto";
 }
 
-export type LoginFailureReason = "cancelled" | "token_missing" | "login_failed";
+export type LoginFailureReason =
+  | "cancelled"
+  | "token_missing"
+  | "login_failed"
+  /** Signed in fine, but the OS keychain would not store the secret. */
+  | "storage_unavailable";
 
 export interface AuthExpiredEvent {
   provider: ProviderType;

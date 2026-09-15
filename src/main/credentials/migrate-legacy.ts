@@ -66,6 +66,30 @@ export function credentialIdForLegacyFile(fileName: string): string | null {
   return id === "" ? null : id;
 }
 
+/**
+ * Credential id for a live account, `<provider>-<accountId>`.
+ *
+ * This has to produce exactly what `credentialIdForLegacyFile` produces for
+ * that account's legacy file name, or a migrated secret lands under an id
+ * nothing looks for and the user is silently asked to sign in again. The two
+ * are defined next to each other and asserted against each other in the tests
+ * for that reason.
+ */
+export function credentialIdForAccount(
+  provider: string,
+  accountId: string,
+): string {
+  return sanitizeCredentialId(`${provider}-${accountId}`);
+}
+
+/** Legacy electron-store file name for one account. */
+export function legacySessionFileName(
+  provider: string,
+  accountId: string,
+): string {
+  return `${LEGACY_SESSION_FILE_PREFIX}${provider}-${accountId}.json`;
+}
+
 function listLegacySessionFiles(userDataDir: string): string[] {
   try {
     return fs

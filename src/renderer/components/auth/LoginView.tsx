@@ -49,6 +49,12 @@ function getLoginErrorMessage(
   if (reason === "cancelled") {
     return `${providerLabel} login was cancelled.`;
   }
+  if (reason === "storage_unavailable") {
+    return (
+      message ??
+      "Signing in worked, but this system's keychain would not store the session."
+    );
+  }
   return message ?? `${providerLabel} login failed. Try again.`;
 }
 

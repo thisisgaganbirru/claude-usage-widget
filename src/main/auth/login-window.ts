@@ -29,6 +29,7 @@ import {
 } from "@main/auth/login-policy";
 import { getVendorSession } from "@main/auth/vendor-session";
 import { getSessionCookieKeys, saveSession } from "@main/auth/session-manager";
+import type { SaveSessionResult } from "@main/auth/session-manager";
 import { LoginFailureReason, ProviderType } from "@shared/types";
 
 const log = createLogger("auth:login-window");
@@ -128,20 +129,39 @@ export async function openLoginWindow(
       detachWatchers();
 
       const cookieValue = `${sessionCookie.name}=${sessionCookie.value}`;
+      let saved: SaveSessionResult;
       try {
-        saveSession(cookieValue, provider);
-        log.info("session captured", { provider });
+        saved = saveSession(cookieValue, provider);
       } catch (error) {
         log.error("failed to save captured session", {
           provider,
           error: error instanceof Error ? error.message : String(error),
         });
+        saved = {
+          ok: false,
+          reason: "io",
+          message: "The session could not be stored on this machine.",
+        };
       }
 
       // Destroyed rather than closed: the page has a live session in it and
       // there is no reason to let it run for however long an unload handler
       // would like.
       if (!loginWindow.isDestroyed()) loginWindow.destroy();
+
+      if (!saved.ok) {
+        // The sign-in itself worked, so "try again" is the wrong advice: the
+        // cookie is not returned and the store's own message says what to fix.
+        resolve({
+          success: false,
+          cookie: null,
+          reason: "storage_unavailable",
+          message: saved.message,
+        });
+        return;
+      }
+
+      log.info("session captured", { provider });
       resolve({ success: true, cookie: cookieValue });
     }
 
