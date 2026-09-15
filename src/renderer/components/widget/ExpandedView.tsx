@@ -4,6 +4,7 @@ import { WidgetHeader, SizeOption } from "./WidgetHeader";
 import { Footer } from "./Footer";
 import { AlertBanner } from "./AlertBanner";
 import { ProviderType } from "@shared/types";
+import { IPC_INVOKE_CHANNELS } from "@shared/ipc-channels";
 
 function formatCountdown(ms: number): string {
   if (ms <= 0) return "0d 00:00:00";
@@ -161,7 +162,7 @@ export function ExpandedView({
     void (async () => {
       try {
         const settings = await (window as any).electron?.ipcRenderer?.invoke(
-          "settings:get",
+          IPC_INVOKE_CHANNELS.SETTINGS_GET,
         );
         if (Array.isArray(settings?.notificationThresholds)) {
           setSelectedThresholds(
@@ -188,7 +189,7 @@ export function ExpandedView({
     setIsUpdatingThresholds(true);
     try {
       const result = await (window as any).electron?.ipcRenderer?.invoke(
-        "settings:update",
+        IPC_INVOKE_CHANNELS.SETTINGS_UPDATE,
         { notificationThresholds: normalized },
       );
       if (Array.isArray(result?.settings?.notificationThresholds)) {
@@ -414,7 +415,7 @@ export function ExpandedView({
               <button
                 onClick={() =>
                   (window as any).electron?.ipcRenderer?.invoke(
-                    "app:openExternal",
+                    IPC_INVOKE_CHANNELS.APP_OPEN_EXTERNAL,
                     provider === "chatgpt" ? "https://chatgpt.com/" : "https://claude.ai",
                   )
                 }
@@ -426,7 +427,7 @@ export function ExpandedView({
               <button
                 onClick={() =>
                   (window as any).electron?.ipcRenderer?.invoke(
-                    "app:openExternal",
+                    IPC_INVOKE_CHANNELS.APP_OPEN_EXTERNAL,
                     provider === "chatgpt"
                       ? "https://chatgpt.com/"
                       : "https://claude.ai/settings/general",
@@ -445,7 +446,7 @@ export function ExpandedView({
             lastUpdated={lastUpdated ? new Date(lastUpdated) : null}
             label={usageData.userName}
             onRefresh={() =>
-              (window as any).electron?.ipcRenderer?.invoke("poller:start", provider)
+              (window as any).electron?.ipcRenderer?.invoke(IPC_INVOKE_CHANNELS.POLLER_START, provider)
             }
           />
         </div>

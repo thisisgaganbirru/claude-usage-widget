@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { ProviderType, UsageData } from "@shared/types";
+import { IPC_INVOKE_CHANNELS } from "@shared/ipc-channels";
 
 export interface UsageStoreState {
   usageByProvider: Partial<Record<ProviderType, UsageData>>;
@@ -97,7 +98,7 @@ export const useUsageStore = create<UsageStoreState>((set, get) => ({
       }
 
       const result = await ipc.invoke(
-        "usage:getCurrent",
+        IPC_INVOKE_CHANNELS.USAGE_GET_CURRENT,
         provider,
       );
       if (result?.usageData) {

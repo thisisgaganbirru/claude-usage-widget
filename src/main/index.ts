@@ -17,14 +17,24 @@ import { UsagePoller } from "./data/usage-poller";
 import { registerIPCHandlers } from "./ipc/handlers";
 import { TrayManager } from "./tray";
 import { SettingsManager } from "./settings/settings-manager";
+import { IPC_INVOKE_CHANNELS, IPC_SEND_CHANNELS } from "@shared/ipc-channels";
 import isDev from "electron-is-dev";
 
-// ── File logger (writes to %APPDATA%/claude-usage-widget/logs/main.log) ──────
+const LOG_ROTATE_BYTES = 2 * 1024 * 1024;
+
+// ── File logger (writes to <userData>/logs/main.log, rotated once at 2 MB) ───
 function setupFileLog() {
   try {
     const logDir = path.join(app.getPath("userData"), "logs");
     if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
     const logFile = path.join(logDir, "main.log");
+    try {
+      if (fs.statSync(logFile).size > LOG_ROTATE_BYTES) {
+        fs.renameSync(logFile, `${logFile}.1`);
+      }
+    } catch {
+      // No existing log file — nothing to rotate.
+    }
     const stream = fs.createWriteStream(logFile, { flags: "a" });
     const tag = (level: string) => `[${new Date().toISOString()}] [${level}] `;
     const orig = { log: console.log, warn: console.warn, error: console.error };
@@ -56,6 +66,18 @@ let usagePoller: UsagePoller | null = null;
 let trayManager: TrayManager | null = null;
 let isPinned = true;
 
+// Only one copy of the widget may run: a second launch focuses the first.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
+
 function applyPinnedState(window: BrowserWindow): void {
   window.setAlwaysOnTop(isPinned, isPinned ? "screen-saver" : "normal");
   window.setVisibleOnAllWorkspaces(isPinned, { visibleOnFullScreen: true });
@@ -63,35 +85,46 @@ function applyPinnedState(window: BrowserWindow): void {
 }
 
 // IPC handler to resize window — centers automatically when switching to login size
-ipcMain.handle("resize-window", (_event, width: number, height: number) => {
-  if (isDev) console.log(`[IPC] Received resize request: ${width}x${height}`);
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.setSize(width, height);
-    // Center the window when switching to login view (800×600)
-    if (width === 800 && height === 600) {
-      mainWindow.center();
+ipcMain.handle(
+  IPC_INVOKE_CHANNELS.RESIZE_WINDOW,
+  (_event, width: number, height: number) => {
+    if (isDev) console.log(`[IPC] Received resize request: ${width}x${height}`);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setSize(width, height);
+      // Center the window when switching to login view (800×600)
+      if (width === 800 && height === 600) {
+        mainWindow.center();
+      }
+      if (isDev) console.log(`[Main] ✅ Window resized to ${width}x${height}`);
+      return { success: true, size: { width, height } };
     }
-    if (isDev) console.log(`[Main] ✅ Window resized to ${width}x${height}`);
-    return { success: true, size: { width, height } };
-  }
-  return { success: false };
-});
+    return { success: false };
+  },
+);
 
-ipcMain.handle("window:getPinned", () => ({ pinned: isPinned }));
+ipcMain.handle(IPC_INVOKE_CHANNELS.WINDOW_GET_PINNED, () => ({
+  pinned: isPinned,
+}));
 
-ipcMain.handle("window:setPinned", (_event, pinned: boolean) => {
-  isPinned = Boolean(pinned);
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    applyPinnedState(mainWindow);
-  }
-  return { success: true, pinned: isPinned };
-});
+ipcMain.handle(
+  IPC_INVOKE_CHANNELS.WINDOW_SET_PINNED,
+  (_event, pinned: boolean) => {
+    isPinned = Boolean(pinned);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      applyPinnedState(mainWindow);
+    }
+    return { success: true, pinned: isPinned };
+  },
+);
 
-ipcMain.on("set-ignore-mouse-events", (_event, ignore: boolean) => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.setIgnoreMouseEvents(ignore, { forward: true });
-  }
-});
+ipcMain.on(
+  IPC_SEND_CHANNELS.SET_IGNORE_MOUSE_EVENTS,
+  (_event, ignore: boolean) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setIgnoreMouseEvents(ignore, { forward: true });
+    }
+  },
+);
 
 const createWindow = () => {
   console.log("[Main] Creating window...");
@@ -202,17 +235,6 @@ const createWindow = () => {
 const app_ready = () => {
   try {
     if (isDev) console.log("[Main] App ready event fired");
-
-    // Register protocol handler for deep links (e.g., claudewidget://auth/callback?session=...)
-    if (process.defaultApp) {
-      if (process.argv.length >= 2) {
-        app.setAsDefaultProtocolClient("claudewidget", process.execPath, [
-          path.resolve(process.argv[1]),
-        ]);
-      }
-    } else {
-      app.setAsDefaultProtocolClient("claudewidget");
-    }
 
     mainWindow = createWindow();
 

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { ProviderType } from "@shared/types";
+import { IPC_INVOKE_CHANNELS } from "@shared/ipc-channels";
 
 function formatLastUpdated(ts: Date | null): string {
   if (!ts) return "Never";
@@ -31,7 +32,7 @@ export function Footer({
   const [version, setVersion] = useState("...");
   useEffect(() => {
     (window as any).electron?.ipcRenderer
-      ?.invoke("app:getVersion")
+      ?.invoke(IPC_INVOKE_CHANNELS.APP_GET_VERSION)
       .then((r: any) => { if (r?.version) setVersion(r.version); })
       .catch(() => {});
   }, []);
@@ -67,7 +68,7 @@ export function Footer({
             title={settingsLabel}
             onClick={() =>
               (window as any).electron?.ipcRenderer?.invoke(
-                "app:openExternal",
+                IPC_INVOKE_CHANNELS.APP_OPEN_EXTERNAL,
                 settingsUrl,
               )
             }

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useUsageStore } from "@renderer/store/usage-store";
 import { useAuthStore } from "@renderer/store/auth-store";
 import { AuthExpiredEvent, ProviderType, UsageData } from "@shared/types";
+import { IPC_ON_CHANNELS } from "@shared/ipc-channels";
 
 const isDev = process.env.NODE_ENV === "development";
 
@@ -56,21 +57,21 @@ export function useUsageData(provider: ProviderType): ProviderUsageState {
       );
     };
 
-    ipc.on("usage:updated", handleUsageUpdate);
-    ipc.on("poller:error", handlePollError);
-    ipc.on("auth:expired", handleAuthExpired);
+    ipc.on(IPC_ON_CHANNELS.USAGE_UPDATED, handleUsageUpdate);
+    ipc.on(IPC_ON_CHANNELS.POLLER_ERROR, handlePollError);
+    ipc.on(IPC_ON_CHANNELS.AUTH_EXPIRED, handleAuthExpired);
 
     return () => {
       ipc.removeListener(
-        "usage:updated",
+        IPC_ON_CHANNELS.USAGE_UPDATED,
         handleUsageUpdate,
       );
       ipc.removeListener(
-        "poller:error",
+        IPC_ON_CHANNELS.POLLER_ERROR,
         handlePollError,
       );
       ipc.removeListener(
-        "auth:expired",
+        IPC_ON_CHANNELS.AUTH_EXPIRED,
         handleAuthExpired,
       );
     };

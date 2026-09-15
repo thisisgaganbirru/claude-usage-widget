@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { useAuthStore } from "@renderer/store/auth-store";
 import claudeIcon from "../../assets/ClaudeIcon-Square.svg";
 import { LoginFailureReason, ProviderType } from "@shared/types";
+import { IPC_INVOKE_CHANNELS, IPC_ON_CHANNELS } from "@shared/ipc-channels";
 
 type LoginStep = "idle" | "opening" | "waiting" | "verifying";
 
@@ -118,7 +119,7 @@ export function LoginView({
       }
     };
 
-    window.electron?.ipcRenderer?.on("auth:login-window-opened", onWindowOpened);
+    window.electron?.ipcRenderer?.on(IPC_ON_CHANNELS.AUTH_LOGIN_WINDOW_OPENED, onWindowOpened);
 
     try {
       if (!window.electron?.ipcRenderer) {
@@ -126,7 +127,7 @@ export function LoginView({
       }
 
       const result = await window.electron.ipcRenderer.invoke(
-        "auth:login",
+        IPC_INVOKE_CHANNELS.AUTH_LOGIN,
         selectedProvider,
       );
       setStep("verifying");
@@ -134,7 +135,7 @@ export function LoginView({
       if (result?.success && result?.isAuthenticated) {
         setAuthenticated(true, selectedProvider);
         await loadAccounts(selectedProvider);
-        await window.electron.ipcRenderer.invoke("poller:start", selectedProvider);
+        await window.electron.ipcRenderer.invoke(IPC_INVOKE_CHANNELS.POLLER_START, selectedProvider);
       } else {
         setError(
           getLoginErrorMessage(selectedProvider, result?.reason, result?.message),
@@ -149,7 +150,7 @@ export function LoginView({
       setSlowHint(false);
       setStep("idle");
       window.electron?.ipcRenderer?.removeListener(
-        "auth:login-window-opened",
+        IPC_ON_CHANNELS.AUTH_LOGIN_WINDOW_OPENED,
         onWindowOpened,
       );
     }
@@ -157,7 +158,7 @@ export function LoginView({
 
   const openProviderAuth = () => {
     void window.electron?.ipcRenderer?.invoke(
-      "app:openExternal",
+      IPC_INVOKE_CHANNELS.APP_OPEN_EXTERNAL,
       selectedOption.authUrl,
     );
   };
@@ -169,14 +170,14 @@ export function LoginView({
     >
       <div className="absolute right-4 top-3 z-10 flex gap-1.5">
         <button
-          onClick={() => window.electron?.ipcRenderer?.invoke("app:minimize")}
+          onClick={() => window.electron?.ipcRenderer?.invoke(IPC_INVOKE_CHANNELS.APP_MINIMIZE)}
           title="Minimize"
           className="flex h-8 w-8 items-center justify-center rounded-md text-white/45 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7aa2ff]"
         >
           -
         </button>
         <button
-          onClick={() => window.electron?.ipcRenderer?.invoke("app:quit")}
+          onClick={() => window.electron?.ipcRenderer?.invoke(IPC_INVOKE_CHANNELS.APP_QUIT)}
           title="Quit"
           className="flex h-8 w-8 items-center justify-center rounded-md text-white/45 transition-colors hover:bg-red-500/15 hover:text-red-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7aa2ff]"
         >

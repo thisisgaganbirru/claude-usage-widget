@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { ProviderAccount, ProviderType } from "@shared/types";
+import { IPC_INVOKE_CHANNELS } from "@shared/ipc-channels";
 
 interface AuthStoreState {
   selectedProvider: ProviderType;
@@ -57,7 +58,7 @@ export const useAuthStore = create<AuthStoreState>((set, get) => ({
       }
 
       const result = await ipc.invoke(
-        "auth:checkSession",
+        IPC_INVOKE_CHANNELS.AUTH_CHECK_SESSION,
         target,
       );
       const authenticated = Boolean(result?.isAuthenticated);
@@ -88,7 +89,7 @@ export const useAuthStore = create<AuthStoreState>((set, get) => ({
     const ipc = window.electron?.ipcRenderer;
     if (!ipc) return;
     const target = provider ?? get().selectedProvider;
-    const result = await ipc.invoke("auth:listAccounts", target).catch(() => null);
+    const result = await ipc.invoke(IPC_INVOKE_CHANNELS.AUTH_LIST_ACCOUNTS, target).catch(() => null);
     if (!Array.isArray(result?.accounts)) return;
     set((state) => ({
       accountsByProvider: {
@@ -102,7 +103,7 @@ export const useAuthStore = create<AuthStoreState>((set, get) => ({
     const ipc = window.electron?.ipcRenderer;
     if (!ipc) return false;
     const result = await ipc
-      .invoke("auth:setActiveAccount", provider, accountId)
+      .invoke(IPC_INVOKE_CHANNELS.AUTH_SET_ACTIVE_ACCOUNT, provider, accountId)
       .catch(() => null);
     if (!result?.success) return false;
     await get().loadAccounts(provider);

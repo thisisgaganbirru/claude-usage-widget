@@ -4,6 +4,7 @@ import { WidgetHeader, SizeOption } from "./WidgetHeader";
 import { Footer } from "./Footer";
 import { AlertBanner } from "./AlertBanner";
 import { ProviderType } from "@shared/types";
+import { IPC_INVOKE_CHANNELS } from "@shared/ipc-channels";
 
 function formatSessionReset(resetTime: Date): string {
   const diff = resetTime.getTime() - Date.now();
@@ -268,7 +269,7 @@ export function CompactView({
           lastUpdated={lastUpdated ? new Date(lastUpdated) : null}
           label={usageData.userName}
           onRefresh={() =>
-            (window as any).electron?.ipcRenderer?.invoke("poller:start", provider)
+            (window as any).electron?.ipcRenderer?.invoke(IPC_INVOKE_CHANNELS.POLLER_START, provider)
           }
         />
       </div>
