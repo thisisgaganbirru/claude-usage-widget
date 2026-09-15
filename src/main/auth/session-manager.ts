@@ -8,17 +8,12 @@
  */
 import Store from "electron-store";
 import { randomUUID, createHash } from "crypto";
-import { session } from "electron";
 import isDev from "electron-is-dev";
+import { clearVendorCookies } from "@main/auth/vendor-session";
 import { ProviderAccount, ProviderType } from "@shared/types";
 
 const PROVIDERS: ProviderType[] = ["claude", "chatgpt"];
 const DEFAULT_ACCOUNT_ID = "default";
-
-const PROVIDER_URLS: Record<ProviderType, string[]> = {
-  claude: ["https://claude.ai"],
-  chatgpt: ["https://chatgpt.com", "https://openai.com"],
-};
 
 const SESSION_COOKIE_KEYS_BY_PROVIDER: Record<ProviderType, string[]> = {
   claude: [
@@ -347,30 +342,17 @@ export function clearAllSessions(provider: ProviderType): void {
   }
 }
 
+/**
+ * Drop the browser cookies backing a provider's sign-in.
+ *
+ * The cookies live in that vendor's own partition, never in the default
+ * session, so the work belongs to `vendor-session.ts`. This wrapper stays for
+ * the callers that only know about providers.
+ */
 export async function clearSessionCookies(
   provider: ProviderType,
 ): Promise<void> {
-  try {
-    const urls = PROVIDER_URLS[provider];
-    let removed = 0;
-    for (const url of urls) {
-      const cookies = await session.defaultSession.cookies.get({ url });
-      for (const cookie of cookies) {
-        await session.defaultSession.cookies.remove(url, cookie.name);
-        removed += 1;
-      }
-    }
-    if (isDev) {
-      console.log(
-        `[SessionManager] Cleared ${removed} browser cookie(s) for ${provider}`,
-      );
-    }
-  } catch (error) {
-    console.error(
-      `[SessionManager] Failed to clear cookies for ${provider}:`,
-      error,
-    );
-  }
+  await clearVendorCookies(provider);
 }
 
 export function isLoggedIn(

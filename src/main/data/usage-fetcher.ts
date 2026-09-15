@@ -97,6 +97,10 @@ function makeApiHeaders(sessionCookie: string): Record<string, string> {
 
 function netGet(url: string, headers: Record<string, string>): Promise<string> {
   return new Promise((resolve, reject) => {
+    // Deliberately the default session rather than a vendor partition. The
+    // stored session cookie is passed as an explicit header, so this request
+    // wants an empty jar: no ambient cookie should ever ride along with it,
+    // and nothing here should be able to write back into the vendor's jar.
     const request = net.request({
       method: "GET",
       url,

@@ -1,85 +1,40 @@
-import { BrowserWindow, session } from "electron";
-import isDev from "electron-is-dev";
-import { getSessionCookieKeys, saveSession } from "./session-manager";
+/**
+ * The embedded vendor sign-in window.
+ *
+ * The window loads the vendor's real login page in an isolated, sandboxed
+ * WebContents bound to that vendor's own cookie jar, watches for the session
+ * cookie, hands it to the session manager and then destroys itself.
+ *
+ * What it is not allowed to do is as much of the design as what it does:
+ *
+ * - it navigates only to the vendor's origins and the identity providers
+ *   those vendors offer, enforced by the process-wide navigation policy;
+ * - it opens popups only for those identity providers, because OAuth cannot
+ *   work without one;
+ * - it never touches `session.defaultSession`, so a captured cookie is
+ *   reachable only from the vendor partition that captured it.
+ */
+import { BrowserWindow } from "electron";
+import { createLogger } from "@main/logging/logger";
+import {
+  SECURE_WEB_PREFERENCES,
+  setNavigationPolicy,
+} from "@main/security/policy";
+import { describeUrlForLog } from "@main/security/url-policy";
+import {
+  CHROME_USER_AGENT,
+  getLoginPolicy,
+  isPostLoginUrl,
+  isVendorCookieDomain,
+} from "@main/auth/login-policy";
+import { getVendorSession } from "@main/auth/vendor-session";
+import { getSessionCookieKeys, saveSession } from "@main/auth/session-manager";
 import { LoginFailureReason, ProviderType } from "@shared/types";
 
-const CHROME_UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-  "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
+const log = createLogger("auth:login-window");
 
-interface ProviderLoginConfig {
-  provider: ProviderType;
-  title: string;
-  productName: string;
-  loginUrl: string;
-  cookieProbeUrl: string;
-  allowedDomain: string;
-  isPostLoginUrl: (url: string) => boolean;
-}
-
-const LOGIN_CONFIG: Record<ProviderType, ProviderLoginConfig> = {
-  claude: {
-    provider: "claude",
-    title: "Login to Claude",
-    productName: "Claude",
-    loginUrl: "https://claude.ai/login",
-    cookieProbeUrl: "https://claude.ai",
-    allowedDomain: "claude.ai",
-    isPostLoginUrl: (url: string): boolean => {
-      if (!url.startsWith("https://claude.ai/")) return false;
-      if (url.includes("accounts.google.com")) return false;
-      if (url === "https://claude.ai/login") return false;
-      if (url.startsWith("https://claude.ai/login?")) return false;
-      if (url.startsWith("https://claude.ai/auth/signin")) return false;
-      if (url.startsWith("https://claude.ai/auth/login")) return false;
-      if (url === "https://claude.ai/auth") return false;
-      if (url.startsWith("https://claude.ai/auth?")) return false;
-      return true;
-    },
-  },
-  chatgpt: {
-    provider: "chatgpt",
-    title: "Login to ChatGPT",
-    productName: "ChatGPT",
-    loginUrl: "https://chatgpt.com/auth/login",
-    cookieProbeUrl: "https://chatgpt.com",
-    allowedDomain: "chatgpt.com",
-    isPostLoginUrl: (url: string): boolean => {
-      if (!url.startsWith("https://chatgpt.com/")) return false;
-      if (url.includes("accounts.google.com")) return false;
-      if (url.startsWith("https://chatgpt.com/auth/login")) return false;
-      if (url.startsWith("https://chatgpt.com/auth/signup")) return false;
-      if (url === "https://chatgpt.com/auth") return false;
-      if (url.startsWith("https://chatgpt.com/auth?")) return false;
-      return true;
-    },
-  },
-};
-
-function getSecureWebPrefs(): Electron.WebPreferences {
-  return {
-    session: session.defaultSession,
-    nodeIntegration: false,
-    contextIsolation: true,
-    sandbox: true,
-  };
-}
-
-function isKnownSessionCookieName(
-  provider: ProviderType,
-  name: string,
-): boolean {
-  return getSessionCookieKeys(provider).includes(name);
-}
-
-function getValidSessionCookie(
-  provider: ProviderType,
-  cookies: Electron.Cookie[],
-): Electron.Cookie | undefined {
-  return cookies.find((cookie) =>
-    isKnownSessionCookieName(provider, cookie.name),
-  );
-}
+/** How often the cookie jar is re-read while the window is open. */
+const COOKIE_POLL_INTERVAL_MS = 1000;
 
 export interface LoginResult {
   success: boolean;
@@ -88,26 +43,44 @@ export interface LoginResult {
   message?: string;
 }
 
+function findSessionCookie(
+  provider: ProviderType,
+  cookies: Electron.Cookie[],
+): Electron.Cookie | undefined {
+  const names = getSessionCookieKeys(provider);
+  return cookies.find((cookie) => names.includes(cookie.name));
+}
+
 export async function openLoginWindow(
   provider: ProviderType,
   onWindowOpen?: () => void,
 ): Promise<LoginResult> {
-  const config = LOGIN_CONFIG[provider];
+  const policy = getLoginPolicy(provider);
+  // Prepared before the window exists, so the window inherits the vendor
+  // user agent and the hardened permission handlers.
+  const vendorSession = getVendorSession(provider);
 
   return new Promise((resolve) => {
     const loginWindow = new BrowserWindow({
       width: 800,
       height: 600,
       center: true,
-      webPreferences: getSecureWebPrefs(),
-      title: config.title,
+      title: policy.title,
       autoHideMenuBar: true,
+      webPreferences: {
+        ...SECURE_WEB_PREFERENCES,
+        session: vendorSession,
+      },
     });
 
-    loginWindow.webContents.setUserAgent(CHROME_UA);
+    setNavigationPolicy(loginWindow.webContents, {
+      navigate: policy.navigateOrigins,
+      popup: policy.popupOrigins,
+    });
+    loginWindow.webContents.setUserAgent(CHROME_USER_AGENT);
 
     let resolved = false;
-    let finalizing = false;
+    let capturing = false;
     let sawPostLoginUrl = false;
     let cookieChangedHandler:
       | ((
@@ -118,66 +91,65 @@ export async function openLoginWindow(
         ) => void)
       | null = null;
 
-    loginWindow.webContents.setWindowOpenHandler(() => ({
-      action: "allow",
-      overrideBrowserWindowOptions: {
-        width: 800,
-        height: 600,
-        autoHideMenuBar: true,
-        webPreferences: {
-          nodeIntegration: false,
-          contextIsolation: true,
-          sandbox: true,
-          session: session.defaultSession,
-        },
-      },
-    }));
-
-    loginWindow.webContents.on("did-create-window", (popup) => {
-      if (isDev) console.log(`[LoginWindow:${provider}] OAuth popup created`);
-      popup.webContents.setUserAgent(CHROME_UA);
-    });
+    function detachWatchers(): void {
+      clearInterval(cookiePoller);
+      if (cookieChangedHandler) {
+        vendorSession.cookies.off("changed", cookieChangedHandler);
+        cookieChangedHandler = null;
+      }
+    }
 
     async function onLoginDetected(): Promise<void> {
-      if (resolved || finalizing) return;
+      if (resolved || capturing) return;
+      capturing = true;
 
-      const cookies = await session.defaultSession.cookies.get({
-        url: config.cookieProbeUrl,
-      });
-      const sessionCookie = getValidSessionCookie(provider, cookies);
-      if (!sessionCookie) {
-        if (isDev) {
-          console.log(
-            `[LoginWindow:${provider}] Waiting for valid auth cookie. Seen:`,
-            cookies.map((c) => c.name).join(", ") || "(none)",
-          );
+      let sessionCookie: Electron.Cookie | undefined;
+      try {
+        for (const origin of policy.cookieOrigins) {
+          const cookies = await vendorSession.cookies.get({ url: origin });
+          sessionCookie = findSessionCookie(provider, cookies);
+          if (sessionCookie) break;
         }
+      } catch (error) {
+        log.error("failed to read vendor cookies", {
+          provider,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      if (!sessionCookie) {
+        // Not an error: the vendor often navigates to the app shell a beat
+        // before it sets the cookie, so this runs again on the next signal.
+        capturing = false;
         return;
       }
 
-      finalizing = true;
-      const cookieValue = `${sessionCookie.name}=${sessionCookie.value}`;
-      if (isDev)
-        console.log(`[LoginWindow:${provider}] Session cookie captured`);
-
       resolved = true;
-      clearInterval(cookiePoller);
-      if (cookieChangedHandler) {
-        session.defaultSession.cookies.off("changed", cookieChangedHandler);
-        cookieChangedHandler = null;
-      }
+      detachWatchers();
 
+      const cookieValue = `${sessionCookie.name}=${sessionCookie.value}`;
       try {
         saveSession(cookieValue, provider);
+        log.info("session captured", { provider });
       } catch (error) {
-        console.error(
-          `[LoginWindow:${provider}] Failed to save session:`,
-          error,
-        );
+        log.error("failed to save captured session", {
+          provider,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
 
-      loginWindow.close();
+      // Destroyed rather than closed: the page has a live session in it and
+      // there is no reason to let it run for however long an unload handler
+      // would like.
+      if (!loginWindow.isDestroyed()) loginWindow.destroy();
       resolve({ success: true, cookie: cookieValue });
+    }
+
+    function onNavigated(url: string): void {
+      if (!isPostLoginUrl(policy, url)) return;
+      sawPostLoginUrl = true;
+      log.debug("post-login url reached", { url: describeUrlForLog(url) });
+      void onLoginDetected();
     }
 
     cookieChangedHandler = (
@@ -187,78 +159,57 @@ export async function openLoginWindow(
       removed: boolean,
     ) => {
       if (resolved || removed) return;
-      if (!cookie.domain?.includes(config.allowedDomain)) return;
-      if (!isKnownSessionCookieName(provider, cookie.name)) return;
-      onLoginDetected();
+      if (!isVendorCookieDomain(policy, cookie.domain)) return;
+      if (!getSessionCookieKeys(provider).includes(cookie.name)) return;
+      void onLoginDetected();
     };
-    session.defaultSession.cookies.on("changed", cookieChangedHandler);
+    vendorSession.cookies.on("changed", cookieChangedHandler);
 
-    const cookiePoller = setInterval(async () => {
+    // The cookie events above are the fast path. This poll is the backstop
+    // for a cookie written before the listener attached, or by a redirect
+    // chain that never surfaces as a navigation in this window.
+    const cookiePoller = setInterval(() => {
       if (resolved || loginWindow.isDestroyed()) {
         clearInterval(cookiePoller);
         return;
       }
-
-      try {
-        const currentUrl = loginWindow.webContents.getURL();
-        if (config.isPostLoginUrl(currentUrl)) {
-          sawPostLoginUrl = true;
-          onLoginDetected();
-          return;
-        }
-
-        const cookies = await session.defaultSession.cookies.get({
-          url: config.cookieProbeUrl,
-        });
-        const found = getValidSessionCookie(provider, cookies);
-        if (found) onLoginDetected();
-      } catch (error) {
-        console.error(`[LoginWindow:${provider}] Poll error:`, error);
-      }
-    }, 1000);
+      onNavigated(loginWindow.webContents.getURL());
+      void onLoginDetected();
+    }, COOKIE_POLL_INTERVAL_MS);
 
     loginWindow.webContents.on("did-navigate", (_event, url) => {
-      if (config.isPostLoginUrl(url)) {
-        sawPostLoginUrl = true;
-        onLoginDetected();
-      }
+      onNavigated(url);
     });
 
     loginWindow.webContents.on("did-navigate-in-page", (_event, url) => {
-      if (config.isPostLoginUrl(url)) {
-        sawPostLoginUrl = true;
-        onLoginDetected();
-      }
+      onNavigated(url);
     });
 
     loginWindow.on("closed", () => {
-      clearInterval(cookiePoller);
-      if (cookieChangedHandler) {
-        session.defaultSession.cookies.off("changed", cookieChangedHandler);
-        cookieChangedHandler = null;
-      }
+      detachWatchers();
+      if (resolved) return;
 
-      if (!resolved) {
-        resolved = true;
-        if (sawPostLoginUrl) {
-          resolve({
-            success: false,
-            cookie: null,
-            reason: "token_missing",
-            message: `Login appeared to complete, but no ${config.productName} session token was captured.`,
-          });
-          return;
-        }
+      resolved = true;
+      if (sawPostLoginUrl) {
+        log.warn("login finished without a session cookie", { provider });
         resolve({
           success: false,
           cookie: null,
-          reason: "cancelled",
-          message: "Login was cancelled before completion.",
+          reason: "token_missing",
+          message: `Login appeared to complete, but no ${policy.productName} session token was captured.`,
         });
+        return;
       }
+
+      resolve({
+        success: false,
+        cookie: null,
+        reason: "cancelled",
+        message: "Login was cancelled before completion.",
+      });
     });
 
-    loginWindow.loadURL(config.loginUrl);
+    void loginWindow.loadURL(policy.loginUrl);
     loginWindow.focus();
     onWindowOpen?.();
   });
