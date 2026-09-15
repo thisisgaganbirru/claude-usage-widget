@@ -6,13 +6,58 @@ const SOURCE_DIR = join(ROOT_DIR, "src");
 const ALLOWED_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".css"]);
 
 /**
- * Files allowed to spell IPC channel names as string literals: the single
- * source of truth, and the preload fallback list that mirrors it.
+ * The only file allowed to spell IPC channel names as string literals. The
+ * preload and the main process import them from there; the renderer never
+ * sees them at all.
  */
-const IPC_LITERAL_ALLOWLIST = new Set([
-  "src/shared/ipc-channels.ts",
-  "src/preload/preload.js",
-]);
+const IPC_CHANNELS_FILE = "src/shared/ipc-channels.ts";
+const IPC_LITERAL_ALLOWLIST = new Set([IPC_CHANNELS_FILE]);
+
+function escapeForRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * The exact channel strings declared in the registry.
+ *
+ * Matching the declared values rather than a `namespace:name` shape keeps the
+ * rule from firing on everything else that happens to look like one, such as
+ * the scope passed to `createLogger("auth:login-window")`. A channel that is
+ * never declared here cannot be registered either: `typed-ipc.ts` types its
+ * registration against the registry, so TypeScript rejects it first.
+ */
+function readDeclaredChannels() {
+  const source = readFileSync(join(ROOT_DIR, IPC_CHANNELS_FILE), "utf8");
+  const names = new Set();
+  const literal = /"([a-z]+:[A-Za-z-]+)"/g;
+  let match = literal.exec(source);
+  while (match) {
+    names.add(match[1]);
+    match = literal.exec(source);
+  }
+  if (names.size === 0) {
+    throw new Error(`lint-guards: no channels found in ${IPC_CHANNELS_FILE}`);
+  }
+  return [...names];
+}
+
+const IPC_CHANNEL_PATTERN = new RegExp(
+  `["'](?:${readDeclaredChannels().map(escapeForRegExp).join("|")})["']`,
+  "g",
+);
+
+/** Everything under src/renderer, which runs in the sandboxed web context. */
+function isRendererFile(relPath) {
+  return relPath.startsWith("src/renderer/");
+}
+
+/**
+ * Tests name channels on purpose, to assert on the error a rejected call
+ * produces. Holding them to the literal rule would only invite a workaround.
+ */
+function isNotTestFile(relPath) {
+  return !relPath.includes("__tests__/");
+}
 
 const RULES = [
   {
@@ -27,11 +72,26 @@ const RULES = [
   },
   {
     id: "no-ipc-channel-literal",
-    pattern:
-      /["'](?:auth|usage|poller|settings|app|window|action|notification|ipc|provider):[A-Za-z-]+["']|["'](?:resize-window|set-ignore-mouse-events)["']/g,
+    pattern: IPC_CHANNEL_PATTERN,
     message:
       "IPC channel names must come from src/shared/ipc-channels.ts, not string literals.",
     exclude: IPC_LITERAL_ALLOWLIST,
+    include: isNotTestFile,
+  },
+  {
+    id: "no-renderer-ipc-channels-import",
+    pattern: /from\s+["'][^"']*ipc-channels["']/g,
+    message:
+      "The renderer must not import IPC channel names. Use the typed bridge in src/renderer/ipc/bridge.ts.",
+    include: isRendererFile,
+  },
+  {
+    id: "no-renderer-ipc-renderer",
+    pattern:
+      /\bipcRenderer\b|\bwindow\.electron\b|\(window as any\)\.electron\b/g,
+    message:
+      "The renderer must not touch ipcRenderer or window.electron. Use the typed bridge in src/renderer/ipc/bridge.ts.",
+    include: isRendererFile,
   },
 ];
 
@@ -71,6 +131,7 @@ function run() {
     const content = readFileSync(file, "utf8");
     for (const rule of RULES) {
       if (rule.exclude?.has(relPath)) continue;
+      if (rule.include && !rule.include(relPath)) continue;
       rule.pattern.lastIndex = 0;
       let match = rule.pattern.exec(content);
       while (match) {

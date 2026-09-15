@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { ProviderType, UsageData } from "@shared/types";
-import { IPC_INVOKE_CHANNELS } from "@shared/ipc-channels";
+import { tryBridge } from "@renderer/ipc/bridge";
 
 export interface UsageStoreState {
   usageByProvider: Partial<Record<ProviderType, UsageData>>;
@@ -93,8 +93,8 @@ export const useUsageStore = create<UsageStoreState>((set, get) => ({
     get().setLoading(provider, true);
     get().setError(provider, null);
     try {
-      const ipc = window.electron?.ipcRenderer;
-      if (!ipc) {
+      const bridge = tryBridge();
+      if (!bridge) {
         const fallback = createDefaultUsageData(provider);
         set((state) => ({
           usageByProvider: { ...state.usageByProvider, [provider]: fallback },
@@ -106,15 +106,9 @@ export const useUsageStore = create<UsageStoreState>((set, get) => ({
         return;
       }
 
-      const result = await ipc.invoke(
-        IPC_INVOKE_CHANNELS.USAGE_GET_CURRENT,
-        provider,
-      );
+      const result = await bridge.usage.getCurrent(provider);
       if (result?.usageData) {
-        const usageData = normalizeUsageData(
-          provider,
-          result.usageData as UsageData,
-        );
+        const usageData = normalizeUsageData(provider, result.usageData);
         set((state) => ({
           usageByProvider: { ...state.usageByProvider, [provider]: usageData },
           lastUpdatedByProvider: {

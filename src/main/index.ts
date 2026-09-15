@@ -1,4 +1,4 @@
-// Suppress EPIPE errors (broken pipe when terminal closes its stdout connection)
+// Suppress EPIPE errors (broken pipe when the terminal closes its stdout end)
 process.on("uncaughtException", (err: NodeJS.ErrnoException) => {
   if (err.code === "EPIPE") return;
   console.error("[Main] Uncaught exception:", err);
@@ -9,57 +9,46 @@ if (require("electron-squirrel-startup")) {
   require("electron").app.quit();
 }
 
-import { app, BrowserWindow, Menu, ipcMain } from "electron";
+import { app, BrowserWindow, Menu } from "electron";
 import * as path from "path";
-import * as fs from "fs";
-import { SessionManager } from "./auth/session-manager";
-import { UsagePoller } from "./data/usage-poller";
-import { registerIPCHandlers } from "./ipc/handlers";
-import { TrayManager } from "./tray";
-import { SettingsManager } from "./settings/settings-manager";
-import { IPC_INVOKE_CHANNELS, IPC_SEND_CHANNELS } from "@shared/ipc-channels";
 import isDev from "electron-is-dev";
 
-const LOG_ROTATE_BYTES = 2 * 1024 * 1024;
+import { SessionManager } from "./auth/session-manager";
+import { UsagePoller } from "./data/usage-poller";
+import {
+  attachConsoleBridge,
+  configureLogging,
+  createConsoleSink,
+  createFileSink,
+  createLogger,
+} from "./logging/logger";
+import { registerIPCHandlers, type WindowControls } from "./ipc/handlers";
+import { rendererOrigins } from "./ipc/typed-ipc";
+import {
+  SECURE_WEB_PREFERENCES,
+  enableProcessSandbox,
+  hardenDefaultSession,
+  installSecurityPolicy,
+  setNavigationPolicy,
+} from "./security/policy";
+import { originOf } from "./security/url-policy";
+import { SettingsManager } from "./settings/settings-manager";
+import { TrayManager } from "./tray";
 
-// ── File logger (writes to <userData>/logs/main.log, rotated once at 2 MB) ───
-function setupFileLog() {
-  try {
-    const logDir = path.join(app.getPath("userData"), "logs");
-    if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
-    const logFile = path.join(logDir, "main.log");
-    try {
-      if (fs.statSync(logFile).size > LOG_ROTATE_BYTES) {
-        fs.renameSync(logFile, `${logFile}.1`);
-      }
-    } catch {
-      // No existing log file — nothing to rotate.
-    }
-    const stream = fs.createWriteStream(logFile, { flags: "a" });
-    const tag = (level: string) => `[${new Date().toISOString()}] [${level}] `;
-    const orig = { log: console.log, warn: console.warn, error: console.error };
-    console.log = (...a) => {
-      orig.log(...a);
-      stream.write(tag("INFO") + a.join(" ") + "\n");
-    };
-    console.warn = (...a) => {
-      orig.warn(...a);
-      stream.write(tag("WARN") + a.join(" ") + "\n");
-    };
-    console.error = (...a) => {
-      orig.error(...a);
-      stream.write(tag("ERROR") + a.join(" ") + "\n");
-    };
-    console.log(`[Main] Log file: ${logFile}`);
-  } catch {}
-}
-setupFileLog();
+const log = createLogger("main");
 
-// Disable menu bar
+// ── Security: everything that has to happen before the app is ready ──────────
+// The renderer process runs sandboxed, no WebContents may navigate off its own
+// origin, and every permission request is denied by default.
+enableProcessSandbox();
+installSecurityPolicy();
+
+// No menu bar: this is a tray widget, and a default menu would expose reload,
+// devtools and zoom shortcuts we do not want in a packaged build.
 Menu.setApplicationMenu(null);
 
-// Flag used by the "close" handler to distinguish tray-hide vs real quit
-(app as any).isQuitting = false;
+// Flag used by the "close" handler to distinguish tray-hide from a real quit
+let isQuitting = false;
 
 let mainWindow: BrowserWindow | null = null;
 let usagePoller: UsagePoller | null = null;
@@ -78,59 +67,69 @@ if (!app.requestSingleInstanceLock()) {
   });
 }
 
+function setupLogging(): void {
+  configureLogging({
+    level: isDev ? "debug" : "info",
+    sinks: [
+      createConsoleSink(),
+      createFileSink({
+        filePath: path.join(app.getPath("userData"), "logs", "main.log"),
+      }),
+    ],
+  });
+  // Call sites that still use console.* go through redaction too.
+  attachConsoleBridge(createLogger("console"));
+}
+
 function applyPinnedState(window: BrowserWindow): void {
   window.setAlwaysOnTop(isPinned, isPinned ? "screen-saver" : "normal");
   window.setVisibleOnAllWorkspaces(isPinned, { visibleOnFullScreen: true });
   if (isPinned) window.moveTop();
 }
 
-// IPC handler to resize window — centers automatically when switching to login size
-ipcMain.handle(
-  IPC_INVOKE_CHANNELS.RESIZE_WINDOW,
-  (_event, width: number, height: number) => {
-    if (isDev) console.log(`[IPC] Received resize request: ${width}x${height}`);
-    if (mainWindow && !mainWindow.isDestroyed()) {
+/**
+ * The only window operations the IPC layer can reach. Bounds checking already
+ * happened in the handler; this decides what the window actually does.
+ */
+function createWindowControls(): WindowControls {
+  return {
+    resize(width, height) {
+      if (!mainWindow || mainWindow.isDestroyed()) return { success: false };
       mainWindow.setSize(width, height);
-      // Center the window when switching to login view (800×600)
-      if (width === 800 && height === 600) {
-        mainWindow.center();
-      }
-      if (isDev) console.log(`[Main] ✅ Window resized to ${width}x${height}`);
+      // Center when switching to the login view, which is much larger.
+      if (width === 800 && height === 600) mainWindow.center();
+      log.debug("window resized", { width, height });
       return { success: true, size: { width, height } };
-    }
-    return { success: false };
-  },
-);
+    },
+    getPinned() {
+      return isPinned;
+    },
+    setPinned(pinned) {
+      isPinned = pinned;
+      if (mainWindow && !mainWindow.isDestroyed()) applyPinnedState(mainWindow);
+      return isPinned;
+    },
+    setIgnoreMouseEvents(ignore) {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.setIgnoreMouseEvents(ignore, { forward: true });
+      }
+    },
+  };
+}
 
-ipcMain.handle(IPC_INVOKE_CHANNELS.WINDOW_GET_PINNED, () => ({
-  pinned: isPinned,
-}));
+/** The URL the renderer is served from, normalized to something loadable. */
+function rendererEntryUrl(): string {
+  if (
+    MAIN_WINDOW_WEBPACK_ENTRY.startsWith("http") ||
+    MAIN_WINDOW_WEBPACK_ENTRY.startsWith("file://")
+  ) {
+    return MAIN_WINDOW_WEBPACK_ENTRY;
+  }
+  return `file://${MAIN_WINDOW_WEBPACK_ENTRY}`;
+}
 
-ipcMain.handle(
-  IPC_INVOKE_CHANNELS.WINDOW_SET_PINNED,
-  (_event, pinned: boolean) => {
-    isPinned = Boolean(pinned);
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      applyPinnedState(mainWindow);
-    }
-    return { success: true, pinned: isPinned };
-  },
-);
-
-ipcMain.on(
-  IPC_SEND_CHANNELS.SET_IGNORE_MOUSE_EVENTS,
-  (_event, ignore: boolean) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setIgnoreMouseEvents(ignore, { forward: true });
-    }
-  },
-);
-
-const createWindow = () => {
-  console.log("[Main] Creating window...");
-
-  const preloadPath = path.join(__dirname, "preload.js");
-  console.log(`[Main] Preload path: ${preloadPath}`);
+const createWindow = (): BrowserWindow => {
+  const startUrl = rendererEntryUrl();
 
   const newWindow = new BrowserWindow({
     width: 350,
@@ -146,112 +145,105 @@ const createWindow = () => {
     resizable: false,
     skipTaskbar: true,
     webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      preload: preloadPath,
+      ...SECURE_WEB_PREFERENCES,
+      preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
     },
   });
+
+  // The widget only ever displays its own bundle. Anything else, including a
+  // link the renderer tries to open itself, is blocked by the policy module.
+  const ownOrigin = originOf(startUrl);
+  setNavigationPolicy(newWindow.webContents, {
+    navigate: ownOrigin ? [ownOrigin] : [],
+    external: ["https://claude.ai", "https://chatgpt.com"],
+  });
+
   applyPinnedState(newWindow);
   // Transparent areas pass mouse events through by default
   newWindow.setIgnoreMouseEvents(true, { forward: true });
 
-  if (isDev) console.log("[Main] Window created, loading URL...");
-
-  // Load the app - use bundled production files
-  let startUrl: string;
-  if (
-    MAIN_WINDOW_WEBPACK_ENTRY.startsWith("http") ||
-    MAIN_WINDOW_WEBPACK_ENTRY.startsWith("file://")
-  ) {
-    startUrl = MAIN_WINDOW_WEBPACK_ENTRY;
-  } else {
-    startUrl = `file://${MAIN_WINDOW_WEBPACK_ENTRY}`;
-  }
-
-  console.log("[Main] Loading URL:", startUrl);
-  newWindow.loadURL(startUrl);
+  log.info("loading renderer", { url: startUrl });
+  void newWindow.loadURL(startUrl);
 
   newWindow.webContents.on("did-finish-load", () => {
-    console.log("[Main] ✅ Page loaded successfully");
     if (!newWindow.isDestroyed()) {
       newWindow.show();
       newWindow.focus();
-      console.log("[Main] ✅ Window shown and focused");
     }
   });
 
-  // Fallback: show window after 3 seconds even if page hasn't loaded
+  // Fallback: show the window after 3 seconds even if the page never loads,
+  // so a broken bundle does not leave the user with nothing on screen.
   setTimeout(() => {
     if (!newWindow.isDestroyed()) {
-      if (isDev)
-        console.log("[Main] [Fallback] Force showing window after timeout");
       newWindow.show();
       newWindow.focus();
     }
   }, 3000);
 
-  // Handle loading errors
   newWindow.webContents.on("render-process-gone", (_event, details) => {
-    console.error(
-      "[Main] Renderer process gone:",
-      details.reason,
-      JSON.stringify(details),
-    );
+    log.error("renderer process gone", {
+      reason: details.reason,
+      exitCode: details.exitCode,
+    });
   });
 
   newWindow.webContents.on(
     "did-fail-load",
-    (_event, errorCode, errorDescription, validatedURL) => {
-      console.error(
-        `[Main] Failed to load page: ${errorCode} ${errorDescription} | URL: ${validatedURL}`,
-      );
+    (_event, errorCode, errorDescription) => {
+      log.error("renderer failed to load", { errorCode, errorDescription });
     },
   );
 
   newWindow.on("closed", () => {
-    if (mainWindow === newWindow) {
-      mainWindow = null;
-    }
+    if (mainWindow === newWindow) mainWindow = null;
   });
 
   // Hide to tray on close instead of quitting
   newWindow.on("close", (event) => {
     const keepInTray = SettingsManager.get().keepInTray;
-    if (!(app as any).isQuitting && keepInTray) {
+    if (!isQuitting && keepInTray) {
       event.preventDefault();
       newWindow.hide();
     }
   });
 
-  // Prevent Windows Aero Snap from moving/maximizing the widget
+  // Prevent Windows Aero Snap from moving or maximizing the widget
   newWindow.on("maximize", () => newWindow.unmaximize());
 
-  // Open dev tools in development only
   if (isDev) newWindow.webContents.openDevTools({ mode: "detach" });
 
   return newWindow;
 };
 
-const app_ready = () => {
+function wireWindow(window: BrowserWindow, poller: UsagePoller): void {
+  registerIPCHandlers(
+    window,
+    poller,
+    createWindowControls(),
+    rendererOrigins(rendererEntryUrl()),
+  );
+}
+
+const app_ready = (): void => {
   try {
-    if (isDev) console.log("[Main] App ready event fired");
+    setupLogging();
+    hardenDefaultSession();
 
     mainWindow = createWindow();
 
-    // Register for auto-launch on Windows login (only in packaged production build)
+    // Register for auto-launch on login (packaged builds only)
     if (!isDev) {
       const startOnBoot = SettingsManager.get().startOnBoot;
       app.setLoginItemSettings({
         openAtLogin: startOnBoot,
         name: "Claude Usage Widget",
       });
-      console.log(
-        `[Main] Auto-start on login: ${startOnBoot ? "enabled" : "disabled"}`,
-      );
+      log.info("auto-start configured", { startOnBoot });
     }
 
     usagePoller = new UsagePoller();
-    registerIPCHandlers(mainWindow, usagePoller);
+    wireWindow(mainWindow, usagePoller);
 
     trayManager = new TrayManager(mainWindow, {
       onRefreshNow: () => usagePoller?.refreshNow(),
@@ -268,15 +260,16 @@ const app_ready = () => {
       usagePoller.start("chatgpt");
     }
   } catch (err) {
-    console.error("[Main] FATAL error in app_ready:", err);
+    log.error("fatal error during startup", {
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 };
 
-// App event listeners
 app.on("ready", app_ready);
 
 app.on("before-quit", () => {
-  (app as any).isQuitting = true;
+  isQuitting = true;
 });
 
 app.on("window-all-closed", () => {
@@ -289,15 +282,14 @@ app.on("window-all-closed", () => {
 app.on("activate", () => {
   if (mainWindow === null) {
     mainWindow = createWindow();
-    if (usagePoller) {
-      registerIPCHandlers(mainWindow, usagePoller);
-    }
+    if (usagePoller) wireWindow(mainWindow, usagePoller);
   } else {
     mainWindow.show();
   }
 });
 
-// Declare Webpack entry point
+// Declare the Webpack entry points injected by Electron Forge
 declare global {
   const MAIN_WINDOW_WEBPACK_ENTRY: string;
+  const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
 }

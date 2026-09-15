@@ -49,6 +49,9 @@ module.exports = {
               html: "./src/renderer/index.html",
               js: "./src/renderer/index.tsx",
               name: "main_window",
+              preload: {
+                js: "./src/preload/preload.ts",
+              },
             },
           ],
         },

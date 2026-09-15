@@ -22,28 +22,4 @@ module.exports = {
   externals: {
     // Empty - let webpack bundle everything needed
   },
-  plugins: [
-    // Copy preload.js to output directory after webpack build
-    {
-      apply: (compiler) => {
-        compiler.hooks.afterEmit.tap("CopyPreloadPlugin", () => {
-          const fs = require("fs");
-          const path = require("path");
-
-          const srcPreload = path.join(__dirname, "src/preload/preload.js");
-          const destPreload = path.join(
-            compiler.options.output.path,
-            "preload.js",
-          );
-
-          try {
-            fs.copyFileSync(srcPreload, destPreload);
-            console.log(`✅ Copied preload.js to ${destPreload}`);
-          } catch (err) {
-            console.error(`❌ Failed to copy preload.js: ${err.message}`);
-          }
-        });
-      },
-    },
-  ],
 };

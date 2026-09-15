@@ -1,7 +1,11 @@
-export const IPC_INTERNAL_CHANNELS = {
-  GET_CHANNELS: "ipc:getChannels",
-} as const;
-
+/**
+ * The only place IPC channel names are spelled out.
+ *
+ * Only the preload and the main process import this module. The renderer talks
+ * to `window.quotaWidget` (see src/shared/ipc-contract.ts) and never learns a
+ * channel name, so it cannot invoke one directly even if it is compromised.
+ * A lint guard in scripts/lint-guards.mjs enforces both halves of that.
+ */
 export const IPC_INVOKE_CHANNELS = {
   AUTH_LOGIN: "auth:login",
   AUTH_LOGOUT: "auth:logout",
@@ -19,14 +23,13 @@ export const IPC_INVOKE_CHANNELS = {
   APP_QUIT: "app:quit",
   APP_MINIMIZE: "app:minimize",
   APP_OPEN_EXTERNAL: "app:openExternal",
-  RESIZE_WINDOW: "resize-window",
+  RESIZE_WINDOW: "window:resize",
   WINDOW_GET_PINNED: "window:getPinned",
   WINDOW_SET_PINNED: "window:setPinned",
-  SET_IGNORE_MOUSE_EVENTS: "set-ignore-mouse-events",
 } as const;
 
 export const IPC_SEND_CHANNELS = {
-  SET_IGNORE_MOUSE_EVENTS: "set-ignore-mouse-events",
+  SET_IGNORE_MOUSE_EVENTS: "window:setIgnoreMouseEvents",
 } as const;
 
 export const IPC_ON_CHANNELS = {
@@ -40,8 +43,9 @@ export const IPC_ON_CHANNELS = {
   ACTION_OPEN_SETTINGS: "action:openSettings",
 } as const;
 
-export const IPC_CHANNELS = {
-  invoke: Object.values(IPC_INVOKE_CHANNELS),
-  send: Object.values(IPC_SEND_CHANNELS),
-  on: Object.values(IPC_ON_CHANNELS),
-} as const;
+export type IpcInvokeChannel =
+  (typeof IPC_INVOKE_CHANNELS)[keyof typeof IPC_INVOKE_CHANNELS];
+export type IpcSendChannel =
+  (typeof IPC_SEND_CHANNELS)[keyof typeof IPC_SEND_CHANNELS];
+export type IpcOnChannel =
+  (typeof IPC_ON_CHANNELS)[keyof typeof IPC_ON_CHANNELS];

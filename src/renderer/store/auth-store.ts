@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { ProviderAccount, ProviderType } from "@shared/types";
-import { IPC_INVOKE_CHANNELS } from "@shared/ipc-channels";
+import { tryBridge } from "@renderer/ipc/bridge";
 
 interface AuthStoreState {
   selectedProvider: ProviderType;
@@ -55,15 +55,12 @@ export const useAuthStore = create<AuthStoreState>((set, get) => ({
   checkSession: async (provider) => {
     const target = provider ?? get().selectedProvider;
     try {
-      const ipc = window.electron?.ipcRenderer;
-      if (!ipc) {
+      const bridge = tryBridge();
+      if (!bridge) {
         return false;
       }
 
-      const result = await ipc.invoke(
-        IPC_INVOKE_CHANNELS.AUTH_CHECK_SESSION,
-        target,
-      );
+      const result = await bridge.auth.checkSession(target);
       const authenticated = Boolean(result?.isAuthenticated);
       const nextMap = { ...get().authByProvider, [target]: authenticated };
       set({
@@ -89,26 +86,24 @@ export const useAuthStore = create<AuthStoreState>((set, get) => ({
   },
 
   loadAccounts: async (provider) => {
-    const ipc = window.electron?.ipcRenderer;
-    if (!ipc) return;
+    const bridge = tryBridge();
+    if (!bridge) return;
     const target = provider ?? get().selectedProvider;
-    const result = await ipc
-      .invoke(IPC_INVOKE_CHANNELS.AUTH_LIST_ACCOUNTS, target)
-      .catch(() => null);
+    const result = await bridge.auth.listAccounts(target).catch(() => null);
     if (!Array.isArray(result?.accounts)) return;
     set((state) => ({
       accountsByProvider: {
         ...state.accountsByProvider,
-        [target]: result.accounts as ProviderAccount[],
+        [target]: result.accounts,
       },
     }));
   },
 
   setActiveAccount: async (provider, accountId) => {
-    const ipc = window.electron?.ipcRenderer;
-    if (!ipc) return false;
-    const result = await ipc
-      .invoke(IPC_INVOKE_CHANNELS.AUTH_SET_ACTIVE_ACCOUNT, provider, accountId)
+    const bridge = tryBridge();
+    if (!bridge) return false;
+    const result = await bridge.auth
+      .setActiveAccount(provider, accountId)
       .catch(() => null);
     if (!result?.success) return false;
     await get().loadAccounts(provider);

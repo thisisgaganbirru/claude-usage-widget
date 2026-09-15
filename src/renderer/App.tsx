@@ -11,27 +11,9 @@ import {
   ThresholdCrossedEvent,
   WidgetSettings,
 } from "@shared/types";
-import { IPC_INVOKE_CHANNELS, IPC_ON_CHANNELS } from "@shared/ipc-channels";
+import { tryBridge } from "@renderer/ipc/bridge";
 
 const isDev = process.env.NODE_ENV === "development";
-
-declare global {
-  interface Window {
-    electron?: {
-      ipcRenderer: {
-        invoke: (channel: string, ...args: any[]) => Promise<any>;
-        send: (channel: string, ...args: any[]) => void;
-        on: (channel: string, listener: (...args: any[]) => void) => void;
-        once: (channel: string, listener: (...args: any[]) => void) => void;
-        removeListener: (
-          channel: string,
-          listener: (...args: any[]) => void,
-        ) => void;
-        removeAllListeners: (channel: string) => void;
-      };
-    };
-  }
-}
 
 const WINDOW_SIZES: Record<SizeOption, [number, number]> = {
   Small: [350, 80],
@@ -91,13 +73,12 @@ export const App = () => {
 
   const loadSettings = async () => {
     try {
-      const ipc = window.electron?.ipcRenderer;
-      if (!ipc) {
+      const bridge = tryBridge();
+      if (!bridge) {
         throw new Error("Settings are available inside the desktop app.");
       }
       setSettingsError(null);
-      const nextSettings = await ipc.invoke(IPC_INVOKE_CHANNELS.SETTINGS_GET);
-      setSettings(nextSettings);
+      setSettings(await bridge.settings.get());
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to load settings";
@@ -109,14 +90,11 @@ export const App = () => {
     setIsSettingsSaving(true);
     setSettingsError(null);
     try {
-      const ipc = window.electron?.ipcRenderer;
-      if (!ipc) {
+      const bridge = tryBridge();
+      if (!bridge) {
         throw new Error("Settings are available inside the desktop app.");
       }
-      const result = await ipc.invoke(
-        IPC_INVOKE_CHANNELS.SETTINGS_UPDATE,
-        nextSettings,
-      );
+      const result = await bridge.settings.update(nextSettings);
       if (result?.settings) {
         setSettings(result.settings);
       } else {
@@ -134,42 +112,39 @@ export const App = () => {
   const handleProviderChange = async (provider: ProviderType) => {
     setSelectedProvider(provider);
     const authed = await checkSession(provider);
-    const ipc = window.electron?.ipcRenderer;
-    if (authed && ipc) {
-      void ipc.invoke(IPC_INVOKE_CHANNELS.POLLER_START, provider);
-    }
+    if (authed) void tryBridge()?.poller.start(provider);
   };
 
   const handleLogout = async () => {
-    await window.electron?.ipcRenderer
-      .invoke(IPC_INVOKE_CHANNELS.AUTH_LOGOUT, selectedProvider)
+    await tryBridge()
+      ?.auth.logout(selectedProvider)
       .catch(() => {});
     setAuthenticated(false, selectedProvider);
   };
 
   const handleHardLogout = async () => {
-    await window.electron?.ipcRenderer
-      .invoke(IPC_INVOKE_CHANNELS.AUTH_LOGOUT_EVERYWHERE)
+    await tryBridge()
+      ?.auth.logoutEverywhere()
       .catch(() => {});
     setAuthenticated(false);
   };
 
   const handleRemove = () => {
-    void window.electron?.ipcRenderer
-      .invoke(IPC_INVOKE_CHANNELS.APP_QUIT)
+    void tryBridge()
+      ?.app.quit()
       .catch(() => {});
   };
 
   const handleTogglePin = (pinned: boolean) => {
     setIsPinned(pinned);
-    void window.electron?.ipcRenderer
-      .invoke(IPC_INVOKE_CHANNELS.WINDOW_SET_PINNED, pinned)
+    void tryBridge()
+      ?.window.setPinned(pinned)
       .catch(() => {});
   };
 
   useEffect(() => {
-    const ipc = window.electron?.ipcRenderer;
-    if (!ipc) return;
+    const bridge = tryBridge();
+    if (!bridge) return;
     let ignoring = true;
     const onMouseMove = (e: MouseEvent) => {
       const el = document.elementFromPoint(e.clientX, e.clientY);
@@ -181,7 +156,7 @@ export const App = () => {
           !el.closest("[data-widget-menu]"));
       if (isTransparent !== ignoring) {
         ignoring = isTransparent;
-        ipc.send(IPC_INVOKE_CHANNELS.SET_IGNORE_MOUSE_EVENTS, ignoring);
+        bridge.window.setIgnoreMouseEvents(ignoring);
       }
     };
     window.addEventListener("mousemove", onMouseMove);
@@ -189,32 +164,20 @@ export const App = () => {
   }, []);
 
   useEffect(() => {
-    const ipc = window.electron?.ipcRenderer;
-    if (!ipc) return;
-    if (!isAuthenticated) {
-      void ipc
-        .invoke(IPC_INVOKE_CHANNELS.RESIZE_WINDOW, 800, 600)
-        .catch(() => {});
-      return;
-    }
-    if (isSettingsOpen) {
-      void ipc
-        .invoke(
-          IPC_INVOKE_CHANNELS.RESIZE_WINDOW,
-          SETTINGS_WINDOW_SIZE[0],
-          SETTINGS_WINDOW_SIZE[1],
-        )
-        .catch(() => {});
-      return;
-    }
-    const [w, h] = WINDOW_SIZES[selectedSize];
-    void ipc.invoke(IPC_INVOKE_CHANNELS.RESIZE_WINDOW, w, h).catch((error) => {
+    const bridge = tryBridge();
+    if (!bridge) return;
+    const [width, height] = !isAuthenticated
+      ? SETTINGS_WINDOW_SIZE
+      : isSettingsOpen
+        ? SETTINGS_WINDOW_SIZE
+        : WINDOW_SIZES[selectedSize];
+    void bridge.window.resize(width, height).catch((error) => {
       console.error("[App] Failed to resize window:", error);
     });
   }, [selectedSize, isAuthenticated, isSettingsOpen]);
 
   useEffect(() => {
-    const ipc = window.electron?.ipcRenderer;
+    const bridge = tryBridge();
     void loadAccounts("claude");
     void loadAccounts("chatgpt");
     void Promise.all([checkSession("claude"), checkSession("chatgpt")]).then(
@@ -222,16 +185,14 @@ export const App = () => {
         if (!claudeAuthed && !chatgptAuthed) return;
         const provider = claudeAuthed ? "claude" : "chatgpt";
         setSelectedProvider(provider);
-        if (ipc) {
-          void ipc.invoke(IPC_INVOKE_CHANNELS.POLLER_START, provider);
-        }
+        void bridge?.poller.start(provider);
       },
     );
 
-    if (!ipc) return;
+    if (!bridge) return;
 
-    void ipc
-      .invoke(IPC_INVOKE_CHANNELS.WINDOW_GET_PINNED)
+    void bridge.window
+      .getPinned()
       .then((result) => {
         if (typeof result?.pinned === "boolean") setIsPinned(result.pinned);
       })
@@ -239,7 +200,7 @@ export const App = () => {
 
     const handleLoginSuccess = () => setAuthenticated(true);
     const handleRefreshNow = () => {
-      void ipc.invoke(IPC_INVOKE_CHANNELS.POLLER_START, selectedProvider);
+      void bridge.poller.start(selectedProvider);
     };
     const handleOpenSettings = async () => {
       setIsSettingsOpen(true);
@@ -258,25 +219,15 @@ export const App = () => {
       }
     };
 
-    ipc.on(IPC_ON_CHANNELS.AUTH_LOGIN_SUCCESS, handleLoginSuccess);
-    ipc.on(IPC_ON_CHANNELS.ACTION_REFRESH_NOW, handleRefreshNow);
-    ipc.on(IPC_ON_CHANNELS.ACTION_OPEN_SETTINGS, handleOpenSettings);
-    ipc.on(IPC_ON_CHANNELS.NOTIFICATION_THRESHOLD, handleThreshold);
+    const unsubscribes = [
+      bridge.events.onLoginSuccess(handleLoginSuccess),
+      bridge.events.onRefreshNow(handleRefreshNow),
+      bridge.events.onOpenSettings(() => void handleOpenSettings()),
+      bridge.events.onThresholdCrossed(handleThreshold),
+    ];
 
     return () => {
-      ipc.removeListener(
-        IPC_ON_CHANNELS.AUTH_LOGIN_SUCCESS,
-        handleLoginSuccess,
-      );
-      ipc.removeListener(IPC_ON_CHANNELS.ACTION_REFRESH_NOW, handleRefreshNow);
-      ipc.removeListener(
-        IPC_ON_CHANNELS.ACTION_OPEN_SETTINGS,
-        handleOpenSettings,
-      );
-      ipc.removeListener(
-        IPC_ON_CHANNELS.NOTIFICATION_THRESHOLD,
-        handleThreshold,
-      );
+      for (const unsubscribe of unsubscribes) unsubscribe();
     };
   }, [
     checkSession,

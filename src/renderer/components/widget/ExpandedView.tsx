@@ -4,7 +4,7 @@ import { WidgetHeader, SizeOption } from "./WidgetHeader";
 import { Footer } from "./Footer";
 import { AlertBanner } from "./AlertBanner";
 import { ProviderType } from "@shared/types";
-import { IPC_INVOKE_CHANNELS } from "@shared/ipc-channels";
+import { tryBridge } from "@renderer/ipc/bridge";
 
 function formatCountdown(ms: number): string {
   if (ms <= 0) return "0d 00:00:00";
@@ -182,14 +182,12 @@ export function ExpandedView({
   useEffect(() => {
     void (async () => {
       try {
-        const settings = await (window as any).electron?.ipcRenderer?.invoke(
-          IPC_INVOKE_CHANNELS.SETTINGS_GET,
-        );
+        const settings = await tryBridge()?.settings.get();
         if (Array.isArray(settings?.notificationThresholds)) {
           setSelectedThresholds(
             settings.notificationThresholds
-              .filter((value: number) => Number.isFinite(value))
-              .sort((a: number, b: number) => a - b),
+              .filter((value) => Number.isFinite(value))
+              .sort((a, b) => a - b),
           );
         }
       } catch {
@@ -211,15 +209,14 @@ export function ExpandedView({
     setSelectedThresholds(normalized);
     setIsUpdatingThresholds(true);
     try {
-      const result = await (window as any).electron?.ipcRenderer?.invoke(
-        IPC_INVOKE_CHANNELS.SETTINGS_UPDATE,
-        { notificationThresholds: normalized },
-      );
+      const result = await tryBridge()?.settings.update({
+        notificationThresholds: normalized,
+      });
       if (Array.isArray(result?.settings?.notificationThresholds)) {
         setSelectedThresholds(
           result.settings.notificationThresholds
-            .filter((value: number) => Number.isFinite(value))
-            .sort((a: number, b: number) => a - b),
+            .filter((value) => Number.isFinite(value))
+            .sort((a, b) => a - b),
         );
       }
     } catch {
@@ -450,8 +447,7 @@ export function ExpandedView({
             <div className="flex gap-1.5">
               <button
                 onClick={() =>
-                  (window as any).electron?.ipcRenderer?.invoke(
-                    IPC_INVOKE_CHANNELS.APP_OPEN_EXTERNAL,
+                  void tryBridge()?.app.openExternal(
                     provider === "chatgpt"
                       ? "https://chatgpt.com/"
                       : "https://claude.ai",
@@ -464,8 +460,7 @@ export function ExpandedView({
               </button>
               <button
                 onClick={() =>
-                  (window as any).electron?.ipcRenderer?.invoke(
-                    IPC_INVOKE_CHANNELS.APP_OPEN_EXTERNAL,
+                  void tryBridge()?.app.openExternal(
                     provider === "chatgpt"
                       ? "https://chatgpt.com/"
                       : "https://claude.ai/settings/general",
@@ -483,12 +478,7 @@ export function ExpandedView({
             provider={provider}
             lastUpdated={lastUpdated ? new Date(lastUpdated) : null}
             label={usageData.userName}
-            onRefresh={() =>
-              (window as any).electron?.ipcRenderer?.invoke(
-                IPC_INVOKE_CHANNELS.POLLER_START,
-                provider,
-              )
-            }
+            onRefresh={() => void tryBridge()?.poller.start(provider)}
           />
         </div>
       </div>

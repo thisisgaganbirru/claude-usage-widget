@@ -2,7 +2,8 @@ import { useEffect } from "react";
 import { useUsageStore } from "@renderer/store/usage-store";
 import { useAuthStore } from "@renderer/store/auth-store";
 import { AuthExpiredEvent, ProviderType, UsageData } from "@shared/types";
-import { IPC_ON_CHANNELS } from "@shared/ipc-channels";
+import { tryBridge } from "@renderer/ipc/bridge";
+import type { PollerErrorEvent, UsageUpdatedEvent } from "@shared/ipc-contract";
 
 const isDev = process.env.NODE_ENV === "development";
 
@@ -29,12 +30,12 @@ export function useUsageData(provider: ProviderType): ProviderUsageState {
 
   useEffect(() => {
     void usageStore.fetchCurrent(provider);
-    const ipc = window.electron?.ipcRenderer;
-    if (!ipc) return;
+    const bridge = tryBridge();
+    if (!bridge) return;
 
-    const handleUsageUpdate = (data: { usageData: UsageData }) => {
-      if (!data?.usageData || data.usageData.provider !== provider) return;
-      const usageData = normalizeUsageData(data.usageData);
+    const handleUsageUpdate = (event: UsageUpdatedEvent) => {
+      if (!event?.usageData || event.usageData.provider !== provider) return;
+      const usageData = normalizeUsageData(event.usageData);
       usageStore.setUsageData(provider, usageData);
       usageStore.setLastUpdated(provider, new Date());
       if (isDev) {
@@ -42,15 +43,12 @@ export function useUsageData(provider: ProviderType): ProviderUsageState {
       }
     };
 
-    const handlePollError = (data: {
-      provider?: ProviderType;
-      error: string;
-    }) => {
-      if (data?.provider && data.provider !== provider) return;
-      usageStore.setError(provider, data?.error ?? "Unknown polling error");
+    const handlePollError = (event: PollerErrorEvent) => {
+      if (event?.provider && event.provider !== provider) return;
+      usageStore.setError(provider, event?.error ?? "Unknown polling error");
     };
 
-    const handleAuthExpired = (event?: AuthExpiredEvent) => {
+    const handleAuthExpired = (event: AuthExpiredEvent) => {
       if (event?.provider && event.provider !== provider) return;
       if (isDev) console.warn("[useUsageData] Auth expired", event);
       clearAuth(provider);
@@ -60,14 +58,14 @@ export function useUsageData(provider: ProviderType): ProviderUsageState {
       );
     };
 
-    ipc.on(IPC_ON_CHANNELS.USAGE_UPDATED, handleUsageUpdate);
-    ipc.on(IPC_ON_CHANNELS.POLLER_ERROR, handlePollError);
-    ipc.on(IPC_ON_CHANNELS.AUTH_EXPIRED, handleAuthExpired);
+    const unsubscribes = [
+      bridge.events.onUsageUpdated(handleUsageUpdate),
+      bridge.events.onPollerError(handlePollError),
+      bridge.events.onAuthExpired(handleAuthExpired),
+    ];
 
     return () => {
-      ipc.removeListener(IPC_ON_CHANNELS.USAGE_UPDATED, handleUsageUpdate);
-      ipc.removeListener(IPC_ON_CHANNELS.POLLER_ERROR, handlePollError);
-      ipc.removeListener(IPC_ON_CHANNELS.AUTH_EXPIRED, handleAuthExpired);
+      for (const unsubscribe of unsubscribes) unsubscribe();
     };
   }, [clearAuth, provider, usageStore]);
 

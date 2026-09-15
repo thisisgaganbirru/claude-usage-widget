@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { ProviderType } from "@shared/types";
-import { IPC_INVOKE_CHANNELS } from "@shared/ipc-channels";
+import { tryBridge } from "@renderer/ipc/bridge";
 
 function formatLastUpdated(ts: Date | null): string {
   if (!ts) return "Never";
@@ -31,10 +31,10 @@ export function Footer({
 }: FooterProps): React.ReactElement {
   const [version, setVersion] = useState("...");
   useEffect(() => {
-    (window as any).electron?.ipcRenderer
-      ?.invoke(IPC_INVOKE_CHANNELS.APP_GET_VERSION)
-      .then((r: any) => {
-        if (r?.version) setVersion(r.version);
+    tryBridge()
+      ?.app.getVersion()
+      .then((result) => {
+        if (result?.version) setVersion(result.version);
       })
       .catch(() => {});
   }, []);
@@ -63,12 +63,7 @@ export function Footer({
           <span className="text-[10px] font-medium text-white/45">{label}</span>
           <span
             title={settingsLabel}
-            onClick={() =>
-              (window as any).electron?.ipcRenderer?.invoke(
-                IPC_INVOKE_CHANNELS.APP_OPEN_EXTERNAL,
-                settingsUrl,
-              )
-            }
+            onClick={() => void tryBridge()?.app.openExternal(settingsUrl)}
             className="inline-flex cursor-pointer leading-none"
           >
             <svg
