@@ -218,7 +218,7 @@ export async function fetchUsageDataFromAPI(
  * Fallback: Fetch usage data by scraping the HTML page
  */
 export async function fetchUsageDataFromScraping(
-  sessionCookie: string,
+  _sessionCookie: string,
 ): Promise<UsageData> {
   throw new Error(
     "HTML scraping fallback is not implemented - CSS selectors unknown. Use API endpoint only.",

@@ -141,19 +141,18 @@ export async function openLoginWindow(
       });
       const sessionCookie = getValidSessionCookie(provider, cookies);
       if (!sessionCookie) {
-        console.log(
-          `[LoginWindow:${provider}] Waiting for valid auth cookie. Seen:`,
-          cookies.map((c) => c.name).join(", ") || "(none)",
-        );
+        if (isDev) {
+          console.log(
+            `[LoginWindow:${provider}] Waiting for valid auth cookie. Seen:`,
+            cookies.map((c) => c.name).join(", ") || "(none)",
+          );
+        }
         return;
       }
 
       finalizing = true;
       const cookieValue = `${sessionCookie.name}=${sessionCookie.value}`;
-      console.log(
-        `[LoginWindow:${provider}] Session cookie captured:`,
-        sessionCookie.name,
-      );
+      if (isDev) console.log(`[LoginWindow:${provider}] Session cookie captured`);
 
       resolved = true;
       clearInterval(cookiePoller);
