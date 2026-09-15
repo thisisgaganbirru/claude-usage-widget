@@ -7,6 +7,8 @@ on:
     branches: [main, dev]
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
   quality:
     runs-on: ubuntu-latest
@@ -15,14 +17,38 @@ jobs:
     env:
       ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
           cache: npm
 
+      # The lockfile is checked before anything is installed from it.
+      # github.com over git+ssh is allowed for one pinned commit only:
+      # @electron/node-gyp, pulled in by Electron Forge.
+      - name: Lint lockfile (registry hosts, https, integrity)
+        run: >
+          npx --yes lockfile-lint@5.0.1
+          --path package-lock.json --type npm
+          --allowed-hosts npm github.com
+          --allowed-schemes "https:" "git+ssh:"
+          --validate-integrity
+
       - run: npm ci
+
+      - name: Verify registry signatures and provenance
+        run: npm audit signatures
+
+      - name: Audit runtime dependencies (high or worse fails)
+        run: npm audit --audit-level=high --omit=dev
+
+      # Advisory until the Electron Forge tree is clean; tracked by Dependabot.
+      - name: Audit all dependencies (advisory)
+        run: npm audit --audit-level=high
+        continue-on-error: true
 
       - name: Lint, type-check, format check
         run: npm run lint

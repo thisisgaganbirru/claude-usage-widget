@@ -1,0 +1,40 @@
+name: New provider
+description: Propose a vendor whose quota the widget should show.
+labels: [enhancement, provider]
+body:
+  - type: input
+    id: vendor
+    attributes:
+      label: Vendor and product
+      placeholder: "Example: Mistral, Le Chat Pro"
+    validations:
+      required: true
+  - type: textarea
+    id: credential
+    attributes:
+      label: Where a credential already exists on disk
+      description: >
+        Path and format of the file the vendor's CLI or desktop app writes
+        (for example ~/.codex/auth.json), or "none, browser login only".
+    validations:
+      required: true
+  - type: textarea
+    id: endpoint
+    attributes:
+      label: Quota endpoint
+      description: >
+        URL, method, required headers, and a redacted example response if
+        you have one. Say whether the endpoint is documented or observed.
+    validations:
+      required: true
+  - type: textarea
+    id: windows
+    attributes:
+      label: Windows the vendor exposes
+      description: Session, daily, weekly, per-model, spend, or something else, and how the reset time is given.
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Terms
+      options:
+        - label: I have checked that reading this endpoint with the user's own credential does not violate the vendor's terms of service, or I have noted the concern above

@@ -5,6 +5,8 @@ on:
     tags:
       - "v*"
 
+permissions: {}
+
 jobs:
   build:
     runs-on: windows-latest
@@ -13,7 +15,9 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Ensure tag commit is on main
         shell: pwsh
@@ -26,9 +30,9 @@ jobs:
           }
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: lts/*
+          node-version-file: .nvmrc
           cache: npm
 
       - name: Install dependencies
@@ -41,7 +45,7 @@ jobs:
         run: npm run make
 
       - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: out/make/squirrel.windows/x64/*.exe
         env:
