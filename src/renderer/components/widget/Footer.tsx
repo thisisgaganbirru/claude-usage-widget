@@ -33,7 +33,9 @@ export function Footer({
   useEffect(() => {
     (window as any).electron?.ipcRenderer
       ?.invoke(IPC_INVOKE_CHANNELS.APP_GET_VERSION)
-      .then((r: any) => { if (r?.version) setVersion(r.version); })
+      .then((r: any) => {
+        if (r?.version) setVersion(r.version);
+      })
       .catch(() => {});
   }, []);
   const refreshBtn = (
@@ -50,20 +52,15 @@ export function Footer({
     provider === "chatgpt"
       ? "https://chatgpt.com/"
       : "https://claude.ai/settings/general";
-  const settingsLabel = provider === "chatgpt" ? "Open ChatGPT" : "Open Claude settings";
+  const settingsLabel =
+    provider === "chatgpt" ? "Open ChatGPT" : "Open Claude settings";
 
   return (
     <div className={`${borderTopClass} ${paddingClass}`}>
       {/* Row 1: username + external link */}
       {label && (
-        <div
-          className={`mb-1 flex items-center gap-1.5 ${labelGapClass}`}
-        >
-          <span
-            className="text-[10px] font-medium text-white/45"
-          >
-            {label}
-          </span>
+        <div className={`mb-1 flex items-center gap-1.5 ${labelGapClass}`}>
+          <span className="text-[10px] font-medium text-white/45">{label}</span>
           <span
             title={settingsLabel}
             onClick={() =>
@@ -92,15 +89,11 @@ export function Footer({
         </div>
       )}
       {/* Row 2: last updated (left) + version (right) */}
-      <div
-        className="flex items-center justify-between"
-      >
+      <div className="flex items-center justify-between">
         <span className="text-[10px] text-white/25">
           Last updated: {formatLastUpdated(lastUpdated)} {refreshBtn}
         </span>
-        <span className="text-[10px] text-white/15">
-          v{version}
-        </span>
+        <span className="text-[10px] text-white/15">v{version}</span>
       </div>
     </div>
   );

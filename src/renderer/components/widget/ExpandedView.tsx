@@ -70,8 +70,22 @@ function ProgressBar({
       preserveAspectRatio="none"
       aria-hidden="true"
     >
-      <rect x="0" y="0" width="100" height={height} rx={height / 2} className="fill-white/10" />
-      <rect x="0" y="0" width={width} height={height} rx={height / 2} fill={color} />
+      <rect
+        x="0"
+        y="0"
+        width="100"
+        height={height}
+        rx={height / 2}
+        className="fill-white/10"
+      />
+      <rect
+        x="0"
+        y="0"
+        width={width}
+        height={height}
+        rx={height / 2}
+        fill={color}
+      />
     </svg>
   );
 }
@@ -96,7 +110,14 @@ function StackedBar({
       preserveAspectRatio="none"
       aria-hidden="true"
     >
-      <rect x="0" y="0" width="100" height="7" rx="3.5" className="fill-white/10" />
+      <rect
+        x="0"
+        y="0"
+        width="100"
+        height="7"
+        rx="3.5"
+        className="fill-white/10"
+      />
       <rect x="0" y="0" width={o} height="7" rx="3.5" fill="#C15F3C" />
       <rect x={o} y="0" width={s} height="7" fill="#6b9eff" />
       <rect x={o + s} y="0" width={h} height="7" rx="3.5" fill="#10b981" />
@@ -183,7 +204,9 @@ export function ExpandedView({
     const nextThresholds = has
       ? selectedThresholds.filter((value) => value !== threshold)
       : [...selectedThresholds, threshold];
-    const normalized = Array.from(new Set(nextThresholds)).sort((a, b) => a - b);
+    const normalized = Array.from(new Set(nextThresholds)).sort(
+      (a, b) => a - b,
+    );
 
     setSelectedThresholds(normalized);
     setIsUpdatingThresholds(true);
@@ -324,15 +347,22 @@ export function ExpandedView({
             <div className="-mx-[18px] mb-4 h-px bg-white/10" />
 
             <div className="mb-1 flex items-baseline justify-between">
-              <span className="text-[13px] font-semibold text-white">Weekly limits</span>
-              <span className="text-xs font-medium text-white/50">{pct}% used</span>
+              <span className="text-[13px] font-semibold text-white">
+                Weekly limits
+              </span>
+              <span className="text-xs font-medium text-white/50">
+                {pct}% used
+              </span>
             </div>
 
             <div className="mb-[14px]">
               <div className="mb-1.5 flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-white/50">All models</span>
+                <span className="text-[11px] font-semibold text-white/50">
+                  All models
+                </span>
                 <span className="text-[10px] text-white/30">
-                  Resets {formatResetDay(resetDate)} {formatResetTime(resetDate)}
+                  Resets {formatResetDay(resetDate)}{" "}
+                  {formatResetTime(resetDate)}
                 </span>
               </div>
               <StackedBar opus={opusPct} sonnet={sonnetPct} haiku={haikuPct} />
@@ -357,7 +387,9 @@ export function ExpandedView({
                 >
                   <div className="mb-[5px] flex items-center justify-between">
                     <div className="flex items-center gap-[7px]">
-                      <div className={`h-2 w-2 rounded-[2px] ${model.dotClass}`} />
+                      <div
+                        className={`h-2 w-2 rounded-[2px] ${model.dotClass}`}
+                      />
                       <span className="text-[11px] font-semibold text-white/70">
                         {model.name}
                       </span>
@@ -366,7 +398,11 @@ export function ExpandedView({
                       {model.used}% used
                     </span>
                   </div>
-                  <ProgressBar percent={model.used} color={model.color} height={4} />
+                  <ProgressBar
+                    percent={model.used}
+                    color={model.color}
+                    height={4}
+                  />
                 </div>
               ))}
             </div>
@@ -416,13 +452,15 @@ export function ExpandedView({
                 onClick={() =>
                   (window as any).electron?.ipcRenderer?.invoke(
                     IPC_INVOKE_CHANNELS.APP_OPEN_EXTERNAL,
-                    provider === "chatgpt" ? "https://chatgpt.com/" : "https://claude.ai",
+                    provider === "chatgpt"
+                      ? "https://chatgpt.com/"
+                      : "https://claude.ai",
                   )
                 }
                 className="flex flex-1 items-center justify-center gap-[5px] rounded-lg border border-white/10 bg-white/5 py-[9px] text-[11px] font-semibold text-white/60"
               >
-                  <span className="text-[13px]">↗</span>{" "}
-                  {provider === "chatgpt" ? "Open ChatGPT" : "Open Claude"}
+                <span className="text-[13px]">↗</span>{" "}
+                {provider === "chatgpt" ? "Open ChatGPT" : "Open Claude"}
               </button>
               <button
                 onClick={() =>
@@ -446,7 +484,10 @@ export function ExpandedView({
             lastUpdated={lastUpdated ? new Date(lastUpdated) : null}
             label={usageData.userName}
             onRefresh={() =>
-              (window as any).electron?.ipcRenderer?.invoke(IPC_INVOKE_CHANNELS.POLLER_START, provider)
+              (window as any).electron?.ipcRenderer?.invoke(
+                IPC_INVOKE_CHANNELS.POLLER_START,
+                provider,
+              )
             }
           />
         </div>

@@ -42,7 +42,10 @@ export function useUsageData(provider: ProviderType): ProviderUsageState {
       }
     };
 
-    const handlePollError = (data: { provider?: ProviderType; error: string }) => {
+    const handlePollError = (data: {
+      provider?: ProviderType;
+      error: string;
+    }) => {
       if (data?.provider && data.provider !== provider) return;
       usageStore.setError(provider, data?.error ?? "Unknown polling error");
     };
@@ -62,18 +65,9 @@ export function useUsageData(provider: ProviderType): ProviderUsageState {
     ipc.on(IPC_ON_CHANNELS.AUTH_EXPIRED, handleAuthExpired);
 
     return () => {
-      ipc.removeListener(
-        IPC_ON_CHANNELS.USAGE_UPDATED,
-        handleUsageUpdate,
-      );
-      ipc.removeListener(
-        IPC_ON_CHANNELS.POLLER_ERROR,
-        handlePollError,
-      );
-      ipc.removeListener(
-        IPC_ON_CHANNELS.AUTH_EXPIRED,
-        handleAuthExpired,
-      );
+      ipc.removeListener(IPC_ON_CHANNELS.USAGE_UPDATED, handleUsageUpdate);
+      ipc.removeListener(IPC_ON_CHANNELS.POLLER_ERROR, handlePollError);
+      ipc.removeListener(IPC_ON_CHANNELS.AUTH_EXPIRED, handleAuthExpired);
     };
   }, [clearAuth, provider, usageStore]);
 

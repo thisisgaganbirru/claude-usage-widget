@@ -12,7 +12,10 @@ interface AuthStoreState {
   clearAuth: (provider?: ProviderType) => void;
   checkSession: (provider?: ProviderType) => Promise<boolean>;
   loadAccounts: (provider?: ProviderType) => Promise<void>;
-  setActiveAccount: (provider: ProviderType, accountId: string) => Promise<boolean>;
+  setActiveAccount: (
+    provider: ProviderType,
+    accountId: string,
+  ) => Promise<boolean>;
 }
 
 const DEFAULT_PROVIDER: ProviderType = "claude";
@@ -89,7 +92,9 @@ export const useAuthStore = create<AuthStoreState>((set, get) => ({
     const ipc = window.electron?.ipcRenderer;
     if (!ipc) return;
     const target = provider ?? get().selectedProvider;
-    const result = await ipc.invoke(IPC_INVOKE_CHANNELS.AUTH_LIST_ACCOUNTS, target).catch(() => null);
+    const result = await ipc
+      .invoke(IPC_INVOKE_CHANNELS.AUTH_LIST_ACCOUNTS, target)
+      .catch(() => null);
     if (!Array.isArray(result?.accounts)) return;
     set((state) => ({
       accountsByProvider: {

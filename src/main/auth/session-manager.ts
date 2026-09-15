@@ -87,7 +87,10 @@ function sanitizeStoreSegment(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, "_");
 }
 
-function getSessionStoreName(provider: ProviderType, accountId: string): string {
+function getSessionStoreName(
+  provider: ProviderType,
+  accountId: string,
+): string {
   return `auth-session-${provider}-${sanitizeStoreSegment(accountId)}`;
 }
 
@@ -190,12 +193,15 @@ function ensureAccount(
     return updated;
   }
 
-  const providerAccounts = accounts.filter((account) => account.provider === provider);
+  const providerAccounts = accounts.filter(
+    (account) => account.provider === provider,
+  );
   const account: ProviderAccount = {
     id: accountId,
     provider,
     displayName:
-      displayName ?? `${getProviderLabel(provider)} Account ${providerAccounts.length + 1}`,
+      displayName ??
+      `${getProviderLabel(provider)} Account ${providerAccounts.length + 1}`,
     isActive: false,
     createdAt: now,
     updatedAt: now,
@@ -214,7 +220,9 @@ function getActiveAccountId(provider: ProviderType): string | null {
   );
   if (activeAccount) return activeAccount.id;
 
-  const firstAccount = getAccounts().find((account) => account.provider === provider);
+  const firstAccount = getAccounts().find(
+    (account) => account.provider === provider,
+  );
   if (firstAccount) {
     setActiveAccountId(provider, firstAccount.id);
     return firstAccount.id;
@@ -222,7 +230,11 @@ function getActiveAccountId(provider: ProviderType): string | null {
 
   const legacyStore = getLegacySessionStore(provider);
   if (legacyStore.get("sessionCookie")) {
-    ensureAccount(provider, DEFAULT_ACCOUNT_ID, `${getProviderLabel(provider)} Account`);
+    ensureAccount(
+      provider,
+      DEFAULT_ACCOUNT_ID,
+      `${getProviderLabel(provider)} Account`,
+    );
     setActiveAccountId(provider, DEFAULT_ACCOUNT_ID);
     return DEFAULT_ACCOUNT_ID;
   }
@@ -241,7 +253,9 @@ export function listAccounts(provider?: ProviderType): ProviderAccount[] {
     : accounts;
 }
 
-export function getActiveAccount(provider: ProviderType): ProviderAccount | null {
+export function getActiveAccount(
+  provider: ProviderType,
+): ProviderAccount | null {
   const accountId = getActiveAccountId(provider);
   if (!accountId) return null;
   return (
@@ -300,7 +314,9 @@ export function getSession(
     if (expiresAt && expiresAt < Date.now()) {
       clearSession(provider, targetAccountId);
       if (isDev) {
-        console.log(`[SessionManager] ${provider}/${targetAccountId} session expired`);
+        console.log(
+          `[SessionManager] ${provider}/${targetAccountId} session expired`,
+        );
       }
       return null;
     }
@@ -316,7 +332,9 @@ export function clearSession(provider: ProviderType, accountId?: string): void {
   if (!targetAccountId) return;
   getSessionStore(provider, targetAccountId).clear();
   if (isDev) {
-    console.log(`[SessionManager] Session cleared for ${provider}/${targetAccountId}`);
+    console.log(
+      `[SessionManager] Session cleared for ${provider}/${targetAccountId}`,
+    );
   }
 }
 
@@ -329,7 +347,9 @@ export function clearAllSessions(provider: ProviderType): void {
   }
 }
 
-export async function clearSessionCookies(provider: ProviderType): Promise<void> {
+export async function clearSessionCookies(
+  provider: ProviderType,
+): Promise<void> {
   try {
     const urls = PROVIDER_URLS[provider];
     let removed = 0;
@@ -353,7 +373,10 @@ export async function clearSessionCookies(provider: ProviderType): Promise<void>
   }
 }
 
-export function isLoggedIn(provider: ProviderType, accountId?: string): boolean {
+export function isLoggedIn(
+  provider: ProviderType,
+  accountId?: string,
+): boolean {
   const cookie = getSession(provider, accountId);
   return cookie !== null && cookie !== "authenticated";
 }

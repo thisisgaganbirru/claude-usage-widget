@@ -6,7 +6,11 @@ import { CompactView } from "@renderer/components/widget/CompactView";
 import { ExpandedView } from "@renderer/components/widget/ExpandedView";
 import { SettingsPanel } from "@renderer/components/settings/SettingsPanel";
 import { SizeOption } from "@renderer/components/widget/WidgetHeader";
-import { ProviderType, ThresholdCrossedEvent, WidgetSettings } from "@shared/types";
+import {
+  ProviderType,
+  ThresholdCrossedEvent,
+  WidgetSettings,
+} from "@shared/types";
 import { IPC_INVOKE_CHANNELS, IPC_ON_CHANNELS } from "@shared/ipc-channels";
 
 const isDev = process.env.NODE_ENV === "development";
@@ -51,10 +55,14 @@ export const App = () => {
   const [settings, setSettings] = useState<WidgetSettings | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [isSettingsSaving, setIsSettingsSaving] = useState(false);
-  const [thresholdAlertMessage, setThresholdAlertMessage] = useState<string | null>(null);
+  const [thresholdAlertMessage, setThresholdAlertMessage] = useState<
+    string | null
+  >(null);
   const [thresholdAlertVisible, setThresholdAlertVisible] = useState(false);
   const [thresholdAlertActive, setThresholdAlertActive] = useState(false);
-  const [alertHiddenMode, setAlertHiddenMode] = useState<"none" | "ignore" | "timeout">("none");
+  const [alertHiddenMode, setAlertHiddenMode] = useState<
+    "none" | "ignore" | "timeout"
+  >("none");
   const [didShowAlertPreview, setDidShowAlertPreview] = useState(false);
   const alertTimerRef = useRef<number | null>(null);
 
@@ -147,7 +155,9 @@ export const App = () => {
   };
 
   const handleRemove = () => {
-    void window.electron?.ipcRenderer.invoke(IPC_INVOKE_CHANNELS.APP_QUIT).catch(() => {});
+    void window.electron?.ipcRenderer
+      .invoke(IPC_INVOKE_CHANNELS.APP_QUIT)
+      .catch(() => {});
   };
 
   const handleTogglePin = (pinned: boolean) => {
@@ -167,7 +177,8 @@ export const App = () => {
         !el ||
         el.tagName === "HTML" ||
         el.tagName === "BODY" ||
-        (!el.closest("[data-widget-card]") && !el.closest("[data-widget-menu]"));
+        (!el.closest("[data-widget-card]") &&
+          !el.closest("[data-widget-menu]"));
       if (isTransparent !== ignoring) {
         ignoring = isTransparent;
         ipc.send(IPC_INVOKE_CHANNELS.SET_IGNORE_MOUSE_EVENTS, ignoring);
@@ -188,16 +199,18 @@ export const App = () => {
     }
     if (isSettingsOpen) {
       void ipc
-        .invoke(IPC_INVOKE_CHANNELS.RESIZE_WINDOW, SETTINGS_WINDOW_SIZE[0], SETTINGS_WINDOW_SIZE[1])
+        .invoke(
+          IPC_INVOKE_CHANNELS.RESIZE_WINDOW,
+          SETTINGS_WINDOW_SIZE[0],
+          SETTINGS_WINDOW_SIZE[1],
+        )
         .catch(() => {});
       return;
     }
     const [w, h] = WINDOW_SIZES[selectedSize];
-    void ipc
-      .invoke(IPC_INVOKE_CHANNELS.RESIZE_WINDOW, w, h)
-      .catch((error) => {
-        console.error("[App] Failed to resize window:", error);
-      });
+    void ipc.invoke(IPC_INVOKE_CHANNELS.RESIZE_WINDOW, w, h).catch((error) => {
+      console.error("[App] Failed to resize window:", error);
+    });
   }, [selectedSize, isAuthenticated, isSettingsOpen]);
 
   useEffect(() => {
@@ -255,10 +268,7 @@ export const App = () => {
         IPC_ON_CHANNELS.AUTH_LOGIN_SUCCESS,
         handleLoginSuccess,
       );
-      ipc.removeListener(
-        IPC_ON_CHANNELS.ACTION_REFRESH_NOW,
-        handleRefreshNow,
-      );
+      ipc.removeListener(IPC_ON_CHANNELS.ACTION_REFRESH_NOW, handleRefreshNow);
       ipc.removeListener(
         IPC_ON_CHANNELS.ACTION_OPEN_SETTINGS,
         handleOpenSettings,
@@ -268,7 +278,13 @@ export const App = () => {
         handleThreshold,
       );
     };
-  }, [checkSession, loadAccounts, selectedProvider, setAuthenticated, setSelectedProvider]);
+  }, [
+    checkSession,
+    loadAccounts,
+    selectedProvider,
+    setAuthenticated,
+    setSelectedProvider,
+  ]);
 
   useEffect(() => {
     if (!isDev || !isAuthenticated || didShowAlertPreview) return;
@@ -289,7 +305,11 @@ export const App = () => {
   };
 
   const handleAlertHoverStart = () => {
-    if (thresholdAlertActive && !thresholdAlertVisible && alertHiddenMode !== "none") {
+    if (
+      thresholdAlertActive &&
+      !thresholdAlertVisible &&
+      alertHiddenMode !== "none"
+    ) {
       setThresholdAlertVisible(true);
     }
   };
@@ -300,7 +320,9 @@ export const App = () => {
     }
   };
 
-  const activeAlertMessage = thresholdAlertVisible ? thresholdAlertMessage : null;
+  const activeAlertMessage = thresholdAlertVisible
+    ? thresholdAlertMessage
+    : null;
 
   if (!isAuthenticated) {
     return (

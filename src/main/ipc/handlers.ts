@@ -26,7 +26,11 @@ import {
   IPC_INVOKE_CHANNELS,
   IPC_ON_CHANNELS,
 } from "@shared/ipc-channels";
-import { AuthExpiredEvent, ProviderType, ThresholdCrossedEvent } from "@shared/types";
+import {
+  AuthExpiredEvent,
+  ProviderType,
+  ThresholdCrossedEvent,
+} from "@shared/types";
 
 let usagePoller: UsagePoller | null = null;
 let registeredQuickEntryShortcut: string | null = null;
@@ -133,7 +137,9 @@ export function registerIPCHandlers(
 
       if (wasPinned) {
         mainWindow.setAlwaysOnTop(true, "screen-saver");
-        mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+        mainWindow.setVisibleOnAllWorkspaces(true, {
+          visibleOnFullScreen: true,
+        });
         mainWindow.moveTop();
       }
 
@@ -163,7 +169,9 @@ export function registerIPCHandlers(
     async (_event, providerInput?: ProviderType) => {
       const provider = resolveProvider(providerInput);
       if (isDev) {
-        console.log(`[IPC] ${IPC_INVOKE_CHANNELS.AUTH_LOGOUT} requested for ${provider}`);
+        console.log(
+          `[IPC] ${IPC_INVOKE_CHANNELS.AUTH_LOGOUT} requested for ${provider}`,
+        );
       }
       clearSession(provider);
       if (provider === "claude") clearOrgIdCache();
@@ -242,7 +250,11 @@ export function registerIPCHandlers(
       if (!usagePoller) return { success: false, isActive: false };
       if (!usagePoller.isActive(provider)) usagePoller.start(provider);
       else void usagePoller.refreshNow(provider);
-      return { success: true, isActive: usagePoller.isActive(provider), provider };
+      return {
+        success: true,
+        isActive: usagePoller.isActive(provider),
+        provider,
+      };
     },
   );
 
@@ -251,16 +263,19 @@ export function registerIPCHandlers(
     return { success: true, isActive: false };
   });
 
-  ipcMain.handle(IPC_INVOKE_CHANNELS.POLLER_SET_INTERVAL, (_event, seconds: number) => {
-    if (seconds < 30 || seconds > 300) {
-      return {
-        success: false,
-        error: "Interval must be between 30-300 seconds",
-      };
-    }
-    usagePoller?.setPollingInterval(seconds);
-    return { success: true };
-  });
+  ipcMain.handle(
+    IPC_INVOKE_CHANNELS.POLLER_SET_INTERVAL,
+    (_event, seconds: number) => {
+      if (seconds < 30 || seconds > 300) {
+        return {
+          success: false,
+          error: "Interval must be between 30-300 seconds",
+        };
+      }
+      usagePoller?.setPollingInterval(seconds);
+      return { success: true };
+    },
+  );
 
   ipcMain.handle(IPC_INVOKE_CHANNELS.SETTINGS_GET, () => SettingsManager.get());
 
@@ -292,12 +307,15 @@ export function registerIPCHandlers(
     return { version: app.getVersion() };
   });
 
-  ipcMain.handle(IPC_INVOKE_CHANNELS.APP_OPEN_EXTERNAL, (_event, url: string) => {
-    const allowed = ["https://claude.ai/", "https://chatgpt.com/"];
-    if (allowed.some((prefix) => url.startsWith(prefix))) {
-      shell.openExternal(url);
-    }
-  });
+  ipcMain.handle(
+    IPC_INVOKE_CHANNELS.APP_OPEN_EXTERNAL,
+    (_event, url: string) => {
+      const allowed = ["https://claude.ai/", "https://chatgpt.com/"];
+      if (allowed.some((prefix) => url.startsWith(prefix))) {
+        shell.openExternal(url);
+      }
+    },
+  );
 
   usagePoller.on("usageUpdate", (usageData) => {
     mainWindow.webContents.send(IPC_ON_CHANNELS.USAGE_UPDATED, { usageData });
@@ -306,7 +324,10 @@ export function registerIPCHandlers(
   usagePoller.on("thresholdCrossed", (event: ThresholdCrossedEvent) => {
     const settings = SettingsManager.get();
     if (settings.enableBannerNotifications) {
-      mainWindow.webContents.send(IPC_ON_CHANNELS.NOTIFICATION_THRESHOLD, event);
+      mainWindow.webContents.send(
+        IPC_ON_CHANNELS.NOTIFICATION_THRESHOLD,
+        event,
+      );
     }
     if (settings.enableDesktopNotifications) {
       showThresholdNotification(event);
@@ -317,12 +338,15 @@ export function registerIPCHandlers(
     mainWindow.webContents.send(IPC_ON_CHANNELS.AUTH_EXPIRED, event);
   });
 
-  usagePoller.on("pollError", (event: { provider: ProviderType; error: Error }) => {
-    mainWindow.webContents.send(IPC_ON_CHANNELS.POLLER_ERROR, {
-      provider: event.provider,
-      error: event.error.message,
-    });
-  });
+  usagePoller.on(
+    "pollError",
+    (event: { provider: ProviderType; error: Error }) => {
+      mainWindow.webContents.send(IPC_ON_CHANNELS.POLLER_ERROR, {
+        provider: event.provider,
+        error: event.error.message,
+      });
+    },
+  );
 
   // Kick off current provider if any saved session exists.
   if (SessionManager.hasAnySession()) {

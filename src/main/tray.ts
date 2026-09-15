@@ -118,7 +118,8 @@ export class TrayManager {
     if (img) this.tray.setImage(img);
 
     // Update tooltip with current usage
-    const providerLabel = usageData.provider === "chatgpt" ? "ChatGPT" : "Claude";
+    const providerLabel =
+      usageData.provider === "chatgpt" ? "ChatGPT" : "Claude";
     const tooltip = `${providerLabel} Usage\n${usageData.currentUsage}/${usageData.planLimit} (${usageData.percentageUsed.toFixed(1)}%)`;
     this.tray.setToolTip(tooltip);
   }

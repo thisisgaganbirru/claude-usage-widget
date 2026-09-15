@@ -136,7 +136,10 @@ export class UsagePoller extends EventEmitter {
     state.notifiedWeeklyThresholds.clear();
   }
 
-  private async poll(provider: ProviderType, force: boolean = false): Promise<void> {
+  private async poll(
+    provider: ProviderType,
+    force: boolean = false,
+  ): Promise<void> {
     const state = this.providerStates[provider];
     if ((!state.isPolling && !force) || state.isPollInFlight) return;
     state.isPollInFlight = true;
@@ -192,7 +195,9 @@ export class UsagePoller extends EventEmitter {
       nextDelay = this.getRetryDelayMs(state.transientFailureCount);
       this.emit("pollError", {
         provider,
-        error: new Error(`${message} (retrying in ${Math.round(nextDelay / 1000)}s)`),
+        error: new Error(
+          `${message} (retrying in ${Math.round(nextDelay / 1000)}s)`,
+        ),
       });
     } finally {
       state.isPollInFlight = false;
@@ -228,13 +233,19 @@ export class UsagePoller extends EventEmitter {
   private checkThresholds(usageData: UsageData): void {
     const settings = SettingsManager.get();
     const state = this.providerStates[usageData.provider];
-    if (!settings.enableDesktopNotifications && !settings.enableBannerNotifications) {
+    if (
+      !settings.enableDesktopNotifications &&
+      !settings.enableBannerNotifications
+    ) {
       state.notifiedSessionThresholds.clear();
       state.notifiedWeeklyThresholds.clear();
       return;
     }
 
-    this.checkSessionThresholds(usageData, this.getThresholds(settings.notificationThresholds));
+    this.checkSessionThresholds(
+      usageData,
+      this.getThresholds(settings.notificationThresholds),
+    );
     this.checkWeeklyThresholds(
       usageData,
       this.getThresholds(settings.weeklyNotificationThresholds),
@@ -243,7 +254,11 @@ export class UsagePoller extends EventEmitter {
 
   private getThresholds(values: number[]): number[] {
     return Array.from(
-      new Set(values.filter((value) => Number.isFinite(value) && value > 0 && value <= 100)),
+      new Set(
+        values.filter(
+          (value) => Number.isFinite(value) && value > 0 && value <= 100,
+        ),
+      ),
     ).sort((a, b) => a - b);
   }
 
@@ -259,12 +274,16 @@ export class UsagePoller extends EventEmitter {
 
     const configuredThresholds = new Set(sessionThresholds);
     state.notifiedSessionThresholds.forEach((value) => {
-      if (!configuredThresholds.has(value)) state.notifiedSessionThresholds.delete(value);
+      if (!configuredThresholds.has(value))
+        state.notifiedSessionThresholds.delete(value);
     });
 
     const percentage = usageData.percentageUsed;
     for (const threshold of sessionThresholds) {
-      if (percentage >= threshold && !state.notifiedSessionThresholds.has(threshold)) {
+      if (
+        percentage >= threshold &&
+        !state.notifiedSessionThresholds.has(threshold)
+      ) {
         state.notifiedSessionThresholds.add(threshold);
         const event: ThresholdCrossedEvent = {
           provider: usageData.provider,
@@ -277,7 +296,8 @@ export class UsagePoller extends EventEmitter {
       }
     }
 
-    if (percentage < sessionThresholds[0]) state.notifiedSessionThresholds.clear();
+    if (percentage < sessionThresholds[0])
+      state.notifiedSessionThresholds.clear();
   }
 
   private checkWeeklyThresholds(
@@ -292,12 +312,16 @@ export class UsagePoller extends EventEmitter {
 
     const configuredThresholds = new Set(weeklyThresholds);
     state.notifiedWeeklyThresholds.forEach((value) => {
-      if (!configuredThresholds.has(value)) state.notifiedWeeklyThresholds.delete(value);
+      if (!configuredThresholds.has(value))
+        state.notifiedWeeklyThresholds.delete(value);
     });
 
     const percentage = Math.min(100, Math.max(0, usageData.sevenDayUsage));
     for (const threshold of weeklyThresholds) {
-      if (percentage >= threshold && !state.notifiedWeeklyThresholds.has(threshold)) {
+      if (
+        percentage >= threshold &&
+        !state.notifiedWeeklyThresholds.has(threshold)
+      ) {
         state.notifiedWeeklyThresholds.add(threshold);
         const event: ThresholdCrossedEvent = {
           provider: usageData.provider,
@@ -310,6 +334,7 @@ export class UsagePoller extends EventEmitter {
       }
     }
 
-    if (percentage < weeklyThresholds[0]) state.notifiedWeeklyThresholds.clear();
+    if (percentage < weeklyThresholds[0])
+      state.notifiedWeeklyThresholds.clear();
   }
 }
