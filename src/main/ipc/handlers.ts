@@ -289,7 +289,6 @@ export function registerIPCHandlers(
     }
     app.setLoginItemSettings({
       openAtLogin: updated.startOnBoot,
-      openAsHidden: true,
       name: "Claude Usage Widget",
     });
     return { success: true, settings: updated };

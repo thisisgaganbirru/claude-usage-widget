@@ -243,7 +243,6 @@ const app_ready = () => {
       const startOnBoot = SettingsManager.get().startOnBoot;
       app.setLoginItemSettings({
         openAtLogin: startOnBoot,
-        openAsHidden: true,
         name: "Claude Usage Widget",
       });
       console.log(
