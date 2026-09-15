@@ -327,7 +327,6 @@ export const App = () => {
         settings={settings}
         isSaving={isSettingsSaving}
         error={settingsError}
-        provider={selectedProvider}
         onClose={() => setIsSettingsOpen(false)}
         onSave={saveSettings}
         onLogout={handleLogout}

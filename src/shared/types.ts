@@ -27,22 +27,6 @@ export interface UsageData {
   timestamp: Date;
 }
 
-export interface UsageSnapshot {
-  id?: number;
-  timestamp: number;
-  currentUsage: number;
-  planLimit: number;
-  percentageUsed: number;
-  planType: string;
-  modelInfo: string;
-}
-
-export interface AuthState {
-  isAuthenticated: boolean;
-  sessionCookie: string | null;
-  expiresAt: number | null;
-}
-
 export interface ProviderAccount {
   id: string;
   provider: ProviderType;
@@ -63,11 +47,6 @@ export interface WidgetSettings {
   keepInTray: boolean;
   quickEntryShortcut: string;
   theme: "light" | "dark" | "auto";
-}
-
-export interface IpcMessage {
-  channel: string;
-  data?: any;
 }
 
 export type LoginFailureReason = "cancelled" | "token_missing" | "login_failed";

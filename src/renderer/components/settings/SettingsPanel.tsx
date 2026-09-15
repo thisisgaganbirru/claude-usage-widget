@@ -1,29 +1,22 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { ProviderType, WidgetSettings } from "@shared/types";
-import { useUsageData } from "@renderer/hooks/useUsageData";
+import { WidgetSettings } from "@shared/types";
 
 interface SettingsPanelProps {
   settings: WidgetSettings;
   isSaving: boolean;
   error: string | null;
-  provider: ProviderType;
   onClose: () => void;
   onSave: (next: WidgetSettings) => Promise<void>;
   onLogout: () => Promise<void>;
   onQuit: () => void;
 }
 
-type SettingsTab = "general" | "notifications" | "appearance" | "profile" | "changelog";
+type SettingsTab = "general" | "notifications" | "appearance";
 
 const TAB_ORDER: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "notifications", label: "Notifications" },
   { id: "appearance", label: "Appearance" },
-  { id: "profile", label: "Profile" },
-];
-
-const SUPPORT_TABS: { id: SettingsTab; label: string }[] = [
-  { id: "changelog", label: "Release Notes" },
 ];
 
 const SESSION_THRESHOLDS = [50, 75, 90, 95];
@@ -39,7 +32,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
     >
       <div
         className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all duration-200 ${
-          checked ? "left-4.5" : "left-0.5"
+          checked ? "left-[18px]" : "left-0.5"
         }`}
       />
     </button>
@@ -88,7 +81,6 @@ export function SettingsPanel({
   settings,
   isSaving,
   error,
-  provider,
   onClose,
   onSave,
   onLogout,
@@ -96,7 +88,6 @@ export function SettingsPanel({
 }: SettingsPanelProps): React.ReactElement {
   const [draft, setDraft] = useState<WidgetSettings>(settings);
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
-  const { usageData } = useUsageData(provider);
 
   const hasChanges = useMemo(
     () => JSON.stringify(draft) !== JSON.stringify(settings),
@@ -124,24 +115,6 @@ export function SettingsPanel({
             <h1 className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#333]">App</h1>
           </div>
           {TAB_ORDER.map((tab) => {
-            const active = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`w-full rounded-lg px-4 py-1.5 text-left text-sm font-medium transition-all ${
-                  active ? "text-white bg-white/5" : "text-[#555] hover:text-[#888]"
-                }`}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-
-          <div className="mb-3 mt-8 px-4">
-            <h1 className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#333]">Support</h1>
-          </div>
-          {SUPPORT_TABS.map((tab) => {
             const active = activeTab === tab.id;
             return (
               <button
@@ -303,54 +276,16 @@ export function SettingsPanel({
                 </div>
               </section>
             )}
-
-            {activeTab === "profile" && (
-              <div className="space-y-6">
-                <section>
-                  <h3 className="mb-4 text-[10px] font-bold uppercase tracking-widest text-[#333]">Identity</h3>
-                  <div className="flex items-center gap-6 border-t border-white/5 py-4">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#1a1a1a] text-lg font-bold text-white border border-white/5">
-                      {usageData?.userName?.charAt(0) || "U"}
-                    </div>
-                    <div>
-                      <p className="text-base font-bold text-white">{usageData?.userName || "User"}</p>
-                      <button className="mt-0.5 text-xs font-bold text-[#cc785c] hover:underline">Update profile</button>
-                    </div>
-                  </div>
-                </section>
-
-                <section>
-                  <h3 className="mb-4 text-[10px] font-bold uppercase tracking-widest text-[#333]">Emails</h3>
-                  <div className="border-t border-white/5 py-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium text-white">{usageData?.userName?.toLowerCase().replace(/\s/g, '.') || 'user'}@gmail.com</p>
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-[#cc785c]">Primary</span>
-                    </div>
-                    <button className="text-xs font-bold text-[#444] hover:text-white">+ Add email address</button>
-                  </div>
-                </section>
-              </div>
-            )}
-
-            {activeTab === "changelog" && (
-              <div className="space-y-6 border-t border-white/5 pt-6">
-                {[
-                  { v: "1.0.3", note: "Clean minimalist redesign focused on transparency and space." },
-                  { v: "1.0.2", note: "Improved usage polling with adaptive backoff logic." },
-                  { v: "1.0.1", note: "Initial release with desktop notification support." }
-                ].map((item) => (
-                  <div key={item.v} className="group">
-                    <p className="text-xs font-bold text-white">v{item.v}</p>
-                    <p className="mt-1 text-sm leading-relaxed text-[#666]">{item.note}</p>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         </div>
 
         <footer className="absolute bottom-10 right-12 z-20">
           <div className="flex items-center gap-6">
+            {error ? (
+              <span role="alert" className="text-xs text-red-400">
+                {error}
+              </span>
+            ) : null}
             <button
               onClick={() => setDraft(settings)}
               disabled={!hasChanges || isSaving}

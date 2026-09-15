@@ -2,7 +2,6 @@ import {
   app,
   ipcMain,
   BrowserWindow,
-  Menu,
   Notification,
   globalShortcut,
   shell,
@@ -21,10 +20,6 @@ import {
 } from "@main/auth/session-manager";
 import { clearOrgIdCache } from "@main/data/usage-fetcher";
 import { SettingsManager } from "@main/settings/settings-manager";
-import {
-  resetBrowserPreference,
-  getPreferredBrowserName,
-} from "@main/browser-preference";
 import {
   IPC_CHANNELS,
   IPC_INTERNAL_CHANNELS,
@@ -62,6 +57,10 @@ function registerQuickEntryShortcut(
 
   const ok = globalShortcut.register(normalized, () => {
     if (mainWindow.isDestroyed()) return;
+    if (mainWindow.isVisible() && mainWindow.isFocused()) {
+      mainWindow.hide();
+      return;
+    }
     mainWindow.show();
     mainWindow.focus();
   });
@@ -281,34 +280,6 @@ export function registerIPCHandlers(
     return { success: true, settings: updated };
   });
 
-  ipcMain.handle(
-    IPC_INVOKE_CHANNELS.MENU_SHOW_CONTEXT_MENU,
-    (event, opts: { userName: string; planType: string; size: string }) => {
-      const win = BrowserWindow.fromWebContents(event.sender);
-      const sizes = ["Small", "Medium", "Large"] as const;
-      const menu = Menu.buildFromTemplate([
-        { label: "View Size", enabled: false },
-        ...sizes.map((s) => ({
-          label: s,
-          type: "radio" as const,
-          checked: opts.size === s,
-          click: () => win?.webContents.send(IPC_ON_CHANNELS.MENU_SIZE_CHANGE, s),
-        })),
-        { type: "separator" },
-        {
-          label: "Logout",
-          click: () => win?.webContents.send(IPC_ON_CHANNELS.MENU_LOGOUT),
-        },
-        { type: "separator" },
-        {
-          label: "Remove Widget",
-          click: () => app.quit(),
-        },
-      ]);
-      menu.popup({ window: win ?? undefined });
-    },
-  );
-
   ipcMain.handle(IPC_INVOKE_CHANNELS.APP_QUIT, () => {
     app.quit();
   });
@@ -326,15 +297,6 @@ export function registerIPCHandlers(
     if (allowed.some((prefix) => url.startsWith(prefix))) {
       shell.openExternal(url);
     }
-  });
-
-  ipcMain.handle(IPC_INVOKE_CHANNELS.BROWSER_RESET_PREFERENCE, () => {
-    resetBrowserPreference();
-    return { success: true };
-  });
-
-  ipcMain.handle(IPC_INVOKE_CHANNELS.BROWSER_GET_PREFERENCE, () => {
-    return { browserName: getPreferredBrowserName() };
   });
 
   usagePoller.on("usageUpdate", (usageData) => {

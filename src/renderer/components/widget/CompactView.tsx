@@ -191,7 +191,6 @@ export function CompactView({
           provider={provider}
           onProviderChange={onProviderChange}
           planType={usageData.planType}
-          userName={usageData.userName}
           selectedSize={selectedSize}
           isPinned={isPinned}
           onTogglePin={onTogglePin}
