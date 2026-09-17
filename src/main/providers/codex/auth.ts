@@ -6,12 +6,11 @@
  * plan, which live in the ID token's claims. The access and refresh tokens in
  * the same file are never read, never copied and never returned.
  *
- * The ID token's signature is not verified, and does not need to be. It is not
- * a trust decision: the file is the user's own, and the two claims taken from
- * it are strings rendered in a card. Anything able to forge it already had
- * write access to the user's home directory.
+ * The ID token's signature is not verified; `../jwt` says why that is safe
+ * for the two strings taken from it.
  */
 import { promises as fs } from "fs";
+import { decodeJwtClaims } from "../jwt";
 import { isPlainObject } from "../schema";
 
 /** Namespaced claim groups the Codex ID token uses. */
@@ -38,22 +37,6 @@ function readString(
   if (typeof value !== "string") return null;
   const trimmed = value.trim().slice(0, MAX_LABEL_LENGTH);
   return trimmed.length > 0 ? trimmed : null;
-}
-
-/**
- * The claims of a JWT, without verifying it. Returns null for anything that
- * is not three base64url segments with a JSON object in the middle.
- */
-export function decodeJwtClaims(token: string): Record<string, unknown> | null {
-  const segments = token.split(".");
-  if (segments.length !== 3) return null;
-  try {
-    const json = Buffer.from(segments[1], "base64url").toString("utf8");
-    const parsed: unknown = JSON.parse(json);
-    return isPlainObject(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
 }
 
 export function parseCodexAccount(json: unknown): CodexAccount {

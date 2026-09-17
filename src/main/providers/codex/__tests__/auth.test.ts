@@ -2,7 +2,7 @@ import { promises as fs } from "fs";
 import * as os from "os";
 import * as path from "path";
 import { afterEach, describe, expect, it } from "vitest";
-import { decodeJwtClaims, parseCodexAccount, readCodexAccount } from "../auth";
+import { parseCodexAccount, readCodexAccount } from "../auth";
 
 function jwt(claims: unknown): string {
   const header = Buffer.from(JSON.stringify({ alg: "RS256" })).toString(
@@ -41,22 +41,6 @@ afterEach(async () => {
     const dir = tempDirs.pop();
     if (dir) await fs.rm(dir, { recursive: true, force: true });
   }
-});
-
-describe("decodeJwtClaims", () => {
-  it("reads the claims without verifying the signature", () => {
-    expect(decodeJwtClaims(jwt({ sub: "user_1" }))).toEqual({ sub: "user_1" });
-  });
-
-  it("returns null for anything that is not three segments", () => {
-    expect(decodeJwtClaims("not.a-jwt")).toBeNull();
-    expect(decodeJwtClaims("")).toBeNull();
-  });
-
-  it("returns null when the payload is not a JSON object", () => {
-    expect(decodeJwtClaims(jwt(["an", "array"]))).toBeNull();
-    expect(decodeJwtClaims("a.$$$.c")).toBeNull();
-  });
 });
 
 describe("parseCodexAccount", () => {
