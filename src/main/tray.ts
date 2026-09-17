@@ -8,8 +8,13 @@ import {
 } from "electron";
 import * as path from "path";
 import isDev from "electron-is-dev";
-import { UsageData } from "@shared/types";
 import { IPC_ON_CHANNELS } from "@shared/ipc-channels";
+import { providerLabel } from "@shared/provider-labels";
+import {
+  worstWindow,
+  type ProviderId,
+  type ProviderState,
+} from "@shared/usage";
 
 const TRAY_ICON_SIZE = { width: 16, height: 16 };
 
@@ -32,6 +37,20 @@ function loadTrayIcon(candidates: string[]): NativeImage | null {
     }
   }
   return null;
+}
+
+/** A short, fixed phrase per state kind. Never a vendor's error text. */
+function describeState(state: ProviderState): string {
+  switch (state.kind) {
+    case "not-detected":
+      return "not detected";
+    case "needs-auth":
+      return "sign in needed";
+    case "error":
+      return state.code === "rate-limited" ? "rate limited" : "unavailable";
+    default:
+      return "unknown";
+  }
 }
 
 interface TrayManagerOptions {
@@ -98,30 +117,43 @@ export class TrayManager {
   }
 
   /**
-   * Update tray icon based on usage percentage
+   * Colour the tray by the worst window one provider is reporting.
+   *
+   * With several providers polling on their own timers this is last-writer-
+   * wins, which is wrong once more than one is enabled. P5 gives the tray the
+   * whole snapshot and a real "worst across providers" rule; until then the
+   * icon at least tracks a real number instead of a fabricated one.
    */
-  updateIcon(usageData: UsageData): void {
+  updateFromState(providerId: ProviderId, state: ProviderState): void {
     if (!this.tray) return;
 
-    const percentage = usageData.percentageUsed;
-    let iconName = "tray.png"; // 0-50%
+    const label = providerLabel(providerId);
+    if (state.kind !== "ok") {
+      this.tray.setToolTip(`${label}: ${describeState(state)}`);
+      return;
+    }
 
+    const worst = worstWindow(state.usage.windows);
+    const percentage = worst?.usedPercent ?? 0;
+
+    let iconName = "tray.png"; // 0-50%
     if (percentage >= 90) {
-      iconName = "tray-critical.png"; // 90%+ red
+      iconName = "tray-critical.png";
     } else if (percentage >= 75) {
-      iconName = "tray-warning.png"; // 75-90% orange
+      iconName = "tray-warning.png";
     } else if (percentage >= 50) {
-      iconName = "tray-medium.png"; // 50-75% amber
+      iconName = "tray-medium.png";
     }
 
     const img = loadTrayIcon([iconName, "ClaudeIcon-Square.png"]);
     if (img) this.tray.setImage(img);
 
-    // Update tooltip with current usage
-    const providerLabel =
-      usageData.provider === "chatgpt" ? "ChatGPT" : "Claude";
-    const tooltip = `${providerLabel} Usage\n${usageData.currentUsage}/${usageData.planLimit} (${usageData.percentageUsed.toFixed(1)}%)`;
-    this.tray.setToolTip(tooltip);
+    const detail =
+      worst === null
+        ? "no usage reported"
+        : `${worst.label} ${percentage.toFixed(0)}%`;
+    const suffix = state.staleSince ? " (stale)" : "";
+    this.tray.setToolTip(`${label}: ${detail}${suffix}`);
   }
 
   /**

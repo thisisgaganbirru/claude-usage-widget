@@ -13,8 +13,6 @@ import { app, BrowserWindow, Menu } from "electron";
 import * as path from "path";
 import isDev from "electron-is-dev";
 
-import { SessionManager } from "./auth/session-manager";
-import { UsagePoller } from "./data/usage-poller";
 import {
   attachConsoleBridge,
   configureLogging,
@@ -24,6 +22,10 @@ import {
 } from "./logging/logger";
 import { registerIPCHandlers, type WindowControls } from "./ipc/handlers";
 import { rendererOrigins } from "./ipc/typed-ipc";
+import { getProvider } from "./providers/registry";
+import { Scheduler } from "./scheduler";
+import { createElectronSchedulerHost } from "./scheduler-host";
+import { createThresholdStore } from "./threshold-store";
 import {
   SECURE_WEB_PREFERENCES,
   enableProcessSandbox,
@@ -34,6 +36,7 @@ import {
 import { originOf } from "./security/url-policy";
 import { SettingsManager } from "./settings/settings-manager";
 import { TrayManager } from "./tray";
+import type { ProviderStateEntry } from "@shared/ipc-contract";
 
 const log = createLogger("main");
 
@@ -51,7 +54,7 @@ Menu.setApplicationMenu(null);
 let isQuitting = false;
 
 let mainWindow: BrowserWindow | null = null;
-let usagePoller: UsagePoller | null = null;
+let scheduler: Scheduler | null = null;
 let trayManager: TrayManager | null = null;
 let isPinned = true;
 
@@ -216,10 +219,10 @@ const createWindow = (): BrowserWindow => {
   return newWindow;
 };
 
-function wireWindow(window: BrowserWindow, poller: UsagePoller): void {
+function wireWindow(window: BrowserWindow, activeScheduler: Scheduler): void {
   registerIPCHandlers(
     window,
-    poller,
+    activeScheduler,
     createWindowControls(),
     rendererOrigins(rendererEntryUrl()),
   );
@@ -242,23 +245,24 @@ const app_ready = (): void => {
       log.info("auto-start configured", { startOnBoot });
     }
 
-    usagePoller = new UsagePoller();
-    wireWindow(mainWindow, usagePoller);
+    scheduler = new Scheduler({
+      host: createElectronSchedulerHost(),
+      getSettings: () => SettingsManager.get(),
+      getProvider,
+      thresholds: createThresholdStore(),
+    });
+    wireWindow(mainWindow, scheduler);
 
     trayManager = new TrayManager(mainWindow, {
-      onRefreshNow: () => usagePoller?.refreshNow(),
+      onRefreshNow: () => scheduler?.refresh(),
     });
     trayManager.create();
 
-    usagePoller.on("usageUpdate", (usageData) => {
-      trayManager?.updateIcon(usageData);
+    scheduler.on("state", (entry: ProviderStateEntry) => {
+      trayManager?.updateFromState(entry.providerId, entry.state);
     });
 
-    if (SessionManager.isAuthenticated("claude")) {
-      usagePoller.start("claude");
-    } else if (SessionManager.isAuthenticated("chatgpt")) {
-      usagePoller.start("chatgpt");
-    }
+    scheduler.start();
   } catch (err) {
     log.error("fatal error during startup", {
       error: err instanceof Error ? err.message : String(err),
@@ -270,6 +274,7 @@ app.on("ready", app_ready);
 
 app.on("before-quit", () => {
   isQuitting = true;
+  scheduler?.stop();
 });
 
 app.on("window-all-closed", () => {
@@ -282,7 +287,7 @@ app.on("window-all-closed", () => {
 app.on("activate", () => {
   if (mainWindow === null) {
     mainWindow = createWindow();
-    if (usagePoller) wireWindow(mainWindow, usagePoller);
+    if (scheduler) wireWindow(mainWindow, scheduler);
   } else {
     mainWindow.show();
   }
