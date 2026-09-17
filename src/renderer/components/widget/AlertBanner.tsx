@@ -36,7 +36,7 @@ export function AlertBanner({
         {onIgnore ? (
           <button
             onClick={onIgnore}
-            className="text-[9px] font-semibold text-white/90 underline decoration-white/80 underline-offset-[2px]"
+            className="text-[9px] font-semibold text-fg/90 underline decoration-white/80 underline-offset-[2px]"
           >
             Ignore
           </button>

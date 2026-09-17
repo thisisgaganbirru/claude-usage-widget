@@ -98,11 +98,11 @@ function Toggle({
     <button
       onClick={() => onChange(!checked)}
       className={`relative h-4 w-8 rounded-full transition-colors duration-200 ${
-        checked ? "bg-[#cc785c]" : "bg-[#333]"
+        checked ? "bg-[#cc785c]" : "bg-fg/20"
       }`}
     >
       <div
-        className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all duration-200 ${
+        className={`absolute top-0.5 h-3 w-3 rounded-full bg-fg transition-all duration-200 ${
           checked ? "left-[18px]" : "left-0.5"
         }`}
       />
@@ -145,7 +145,7 @@ function ShortcutRecorder({
   return (
     <div className="flex items-center justify-between py-2">
       <div className="flex flex-col">
-        <span className="text-sm font-medium text-white">Global Shortcut</span>
+        <span className="text-sm font-medium text-fg">Global Shortcut</span>
         <span className="text-xs text-[#777]">
           {isRecording ? "Recording..." : value}
         </span>
@@ -181,11 +181,9 @@ function ProviderSection({
   };
 
   return (
-    <section className="border-t border-white/5 py-5">
+    <section className="border-t border-fg/5 py-5">
       <div className="mb-3 flex items-center justify-between">
-        <span className="text-sm font-medium text-white">
-          {providerLabel(id)}
-        </span>
+        <span className="text-sm font-medium text-fg">{providerLabel(id)}</span>
         <Toggle
           checked={block.enabled}
           onChange={(enabled) => onChange({ enabled })}
@@ -215,7 +213,7 @@ function ProviderSection({
             onChange={(e) =>
               onChange({ intervalSec: parseInt(e.target.value, 10) })
             }
-            className="h-0.5 w-full appearance-none bg-[#222] accent-[#cc785c]"
+            className="h-0.5 w-full appearance-none bg-fg/15 accent-[#cc785c]"
           />
         </div>
 
@@ -233,13 +231,13 @@ function ProviderSection({
                   className="flex flex-col items-center gap-2 text-xs transition-all"
                 >
                   <span
-                    className={`font-medium ${on ? "text-white" : "text-[#555]"}`}
+                    className={`font-medium ${on ? "text-fg" : "text-[#555]"}`}
                   >
                     {value}%
                   </span>
                   <div
                     className={`h-1 w-1 rounded-full transition-all ${
-                      on ? "bg-[#cc785c]" : "bg-[#222]"
+                      on ? "bg-[#cc785c]" : "bg-fg/15"
                     }`}
                   />
                 </button>
@@ -290,11 +288,11 @@ export function SettingsPanel({
   return (
     <div
       data-widget-card
-      className="flex h-[600px] w-[800px] overflow-hidden bg-[#0c0c0c] font-sans text-[#d1d1d1]"
+      className="flex h-[600px] w-[800px] overflow-hidden bg-sunken font-sans text-fg/80"
     >
-      <aside className="flex w-[220px] flex-col border-r border-white/5 py-8">
+      <aside className="flex w-[220px] flex-col border-r border-fg/5 py-8">
         <div className="mb-8 px-8">
-          <h2 className="text-lg font-bold tracking-tight text-white leading-tight">
+          <h2 className="text-lg font-bold tracking-tight text-fg leading-tight">
             Widget
             <br />
             Controls
@@ -314,9 +312,7 @@ export function SettingsPanel({
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={`w-full rounded-lg px-4 py-1.5 text-left text-sm font-medium transition-all ${
-                  active
-                    ? "text-white bg-white/5"
-                    : "text-[#555] hover:text-[#888]"
+                  active ? "text-fg bg-fg/5" : "text-[#555] hover:text-[#888]"
                 }`}
               >
                 {tab.label}
@@ -328,13 +324,13 @@ export function SettingsPanel({
         <div className="px-8 pb-2">
           <button
             onClick={() => void onLogout()}
-            className="flex w-full items-center gap-2 py-1.5 text-xs font-bold text-[#444] transition-colors hover:text-white"
+            className="flex w-full items-center gap-2 py-1.5 text-xs font-bold text-[#444] transition-colors hover:text-fg"
           >
             Sign out
           </button>
           <button
             onClick={onQuit}
-            className="flex w-full items-center gap-2 py-1.5 text-xs font-bold text-[#444] transition-colors hover:text-white"
+            className="flex w-full items-center gap-2 py-1.5 text-xs font-bold text-[#444] transition-colors hover:text-fg"
           >
             Quit Widget
           </button>
@@ -345,7 +341,7 @@ export function SettingsPanel({
         <header className="flex h-[72px] shrink-0 items-center justify-end px-12">
           <button
             onClick={onClose}
-            className="text-[#333] transition-colors hover:text-white"
+            className="text-[#333] transition-colors hover:text-fg"
           >
             <svg
               className="h-5 w-5"
@@ -371,7 +367,7 @@ export function SettingsPanel({
                   <h3 className="mb-2 text-[10px] font-bold uppercase tracking-widest text-[#333]">
                     Shortcuts
                   </h3>
-                  <div className="border-t border-white/5 pt-2">
+                  <div className="border-t border-fg/5 pt-2">
                     <ShortcutRecorder
                       value={draft.quickEntryShortcut}
                       onChange={(val) =>
@@ -388,10 +384,10 @@ export function SettingsPanel({
                   <h3 className="mb-2 text-[10px] font-bold uppercase tracking-widest text-[#333]">
                     Behavior
                   </h3>
-                  <div className="space-y-0 border-t border-white/5">
+                  <div className="space-y-0 border-t border-fg/5">
                     <div className="flex items-center justify-between py-3">
                       <div>
-                        <p className="text-sm font-medium text-white">
+                        <p className="text-sm font-medium text-fg">
                           Start on boot
                         </p>
                         <p className="text-[11px] text-[#555]">
@@ -405,9 +401,9 @@ export function SettingsPanel({
                         }
                       />
                     </div>
-                    <div className="flex items-center justify-between border-t border-white/5 py-3">
+                    <div className="flex items-center justify-between border-t border-fg/5 py-3">
                       <div>
-                        <p className="text-sm font-medium text-white">
+                        <p className="text-sm font-medium text-fg">
                           Keep in tray
                         </p>
                         <p className="text-[11px] text-[#555]">
@@ -454,9 +450,9 @@ export function SettingsPanel({
                   Which levels raise an alert is set per provider, under
                   Providers.
                 </p>
-                <div className="space-y-0 border-t border-white/5">
+                <div className="space-y-0 border-t border-fg/5">
                   <div className="flex items-center justify-between py-3">
-                    <p className="text-sm font-medium text-white">
+                    <p className="text-sm font-medium text-fg">
                       Desktop notifications
                     </p>
                     <Toggle
@@ -469,8 +465,8 @@ export function SettingsPanel({
                       }
                     />
                   </div>
-                  <div className="flex items-center justify-between border-t border-white/5 py-3">
-                    <p className="text-sm font-medium text-white">
+                  <div className="flex items-center justify-between border-t border-fg/5 py-3">
+                    <p className="text-sm font-medium text-fg">
                       Banner notifications
                     </p>
                     <Toggle
@@ -492,7 +488,7 @@ export function SettingsPanel({
                 <h3 className="mb-4 text-[10px] font-bold uppercase tracking-widest text-[#333]">
                   Theme
                 </h3>
-                <div className="grid grid-cols-3 gap-8 border-t border-white/5 pt-6">
+                <div className="grid grid-cols-3 gap-8 border-t border-fg/5 pt-6">
                   {(["auto", "dark", "light"] as const).map((t) => (
                     <button
                       key={t}
@@ -505,11 +501,11 @@ export function SettingsPanel({
                         className={`h-8 w-full rounded border transition-all ${
                           draft.theme === t
                             ? "border-[#cc785c] bg-[#cc785c]/10"
-                            : "border-white/5 bg-[#111] group-hover:border-white/10"
+                            : "border-fg/5 bg-fg/[0.06] group-hover:border-fg/10"
                         }`}
                       />
                       <span
-                        className={`text-[11px] font-bold capitalize ${draft.theme === t ? "text-white" : "text-[#555]"}`}
+                        className={`text-[11px] font-bold capitalize ${draft.theme === t ? "text-fg" : "text-[#555]"}`}
                       >
                         {t}
                       </span>
@@ -538,7 +534,7 @@ export function SettingsPanel({
             <button
               onClick={() => void onSave(patch)}
               disabled={!hasChanges || isSaving}
-              className="rounded-full bg-white px-8 py-2.5 text-xs font-bold text-black transition-all hover:scale-105 active:scale-95 disabled:opacity-0 disabled:pointer-events-none"
+              className="rounded-full bg-fg px-8 py-2.5 text-xs font-bold text-black transition-all hover:scale-105 active:scale-95 disabled:opacity-0 disabled:pointer-events-none"
             >
               {isSaving ? "Saving" : "Save changes"}
             </button>

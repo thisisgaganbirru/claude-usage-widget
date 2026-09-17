@@ -53,10 +53,10 @@ export function WidgetMenu({
     <div
       onMouseDown={(e) => e.stopPropagation()}
       data-widget-menu
-      className="absolute right-0 top-[calc(100%+4px)] z-[9999] w-[200px] rounded-[10px] border border-white/10 bg-[rgba(28,28,31,0.98)] py-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.55)]"
+      className="absolute right-0 top-[calc(100%+4px)] z-[9999] w-[200px] rounded-[10px] border border-fg/10 bg-[rgba(28,28,31,0.98)] py-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.55)]"
     >
       {/* Size label */}
-      <div className="select-none px-3 pb-[5px] pt-1 text-[10px] font-semibold uppercase tracking-[0.07em] text-white/30">
+      <div className="select-none px-3 pb-[5px] pt-1 text-[10px] font-semibold uppercase tracking-[0.07em] text-fg/30">
         Size
       </div>
 
@@ -72,12 +72,12 @@ export function WidgetMenu({
             onMouseEnter={() => setHoveredItem(size)}
             onMouseLeave={() => setHoveredItem(null)}
             className={`flex w-full cursor-pointer items-center gap-2.5 border-0 px-3 py-1.5 text-left text-[13px] transition-colors ${
-              hoveredItem === size ? "bg-white/[0.06]" : "bg-transparent"
-            } ${active ? "text-white" : "text-white/45"}`}
+              hoveredItem === size ? "bg-fg/[0.06]" : "bg-transparent"
+            } ${active ? "text-fg" : "text-fg/45"}`}
           >
             <span
               className={`flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-full border-2 ${
-                active ? "border-[#C15F3C]" : "border-white/[0.22]"
+                active ? "border-[#C15F3C]" : "border-fg/[0.22]"
               }`}
             >
               {active && (
@@ -90,7 +90,7 @@ export function WidgetMenu({
       })}
 
       {/* Divider */}
-      <div className="my-[5px] h-px bg-white/[0.07]" />
+      <div className="my-[5px] h-px bg-fg/[0.07]" />
 
       {/* Logout */}
       <button
@@ -103,7 +103,7 @@ export function WidgetMenu({
         className={`flex w-full cursor-pointer items-center gap-[9px] border-0 px-3 py-[7px] text-left text-[13px] transition-colors ${
           hoveredItem === "logout"
             ? "bg-red-500/10 text-red-500"
-            : "bg-transparent text-white/60"
+            : "bg-transparent text-fg/60"
         }`}
       >
         <svg
@@ -133,7 +133,7 @@ export function WidgetMenu({
         className={`flex w-full cursor-pointer items-center gap-[9px] border-0 px-3 py-[7px] text-left text-[12px] transition-colors ${
           hoveredItem === "logout_everywhere"
             ? "bg-orange-500/10 text-orange-400"
-            : "bg-transparent text-white/50"
+            : "bg-transparent text-fg/50"
         }`}
       >
         <svg
@@ -154,7 +154,7 @@ export function WidgetMenu({
       </button>
 
       {/* Divider */}
-      <div className="my-[5px] h-px bg-white/[0.07]" />
+      <div className="my-[5px] h-px bg-fg/[0.07]" />
 
       {/* Remove */}
       <button
