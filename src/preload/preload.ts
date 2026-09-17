@@ -31,14 +31,12 @@ import type {
   AuthSetActiveAccountResult,
   LoginWindowOpenedEvent,
   OpenExternalResult,
-  PollerErrorEvent,
-  PollerIntervalResult,
-  PollerStateResult,
+  ProvidersRefreshResult,
+  ProvidersSnapshotResult,
+  ProviderStateEvent,
   QuotaWidgetApi,
   SettingsUpdateResult,
   Unsubscribe,
-  UsageCurrentResult,
-  UsageUpdatedEvent,
   WindowPinnedResult,
   WindowResizeResult,
   WindowSetPinnedResult,
@@ -46,9 +44,11 @@ import type {
 import type {
   AuthExpiredEvent,
   ProviderType,
+  SettingsPatch,
   ThresholdCrossedEvent,
   WidgetSettings,
 } from "@shared/types";
+import type { ProviderId } from "@shared/usage";
 
 /**
  * Subscribe to a main-process event and hand back the unsubscribe. The event
@@ -103,24 +103,17 @@ const api: QuotaWidgetApi = {
       ),
   },
 
-  usage: {
-    getCurrent: (provider: ProviderType): Promise<UsageCurrentResult> =>
-      ipcRenderer.invoke(IPC_INVOKE_CHANNELS.USAGE_GET_CURRENT, provider),
-  },
-
-  poller: {
-    start: (provider: ProviderType): Promise<PollerStateResult> =>
-      ipcRenderer.invoke(IPC_INVOKE_CHANNELS.POLLER_START, provider),
-    stop: (): Promise<PollerStateResult> =>
-      ipcRenderer.invoke(IPC_INVOKE_CHANNELS.POLLER_STOP),
-    setInterval: (seconds: number): Promise<PollerIntervalResult> =>
-      ipcRenderer.invoke(IPC_INVOKE_CHANNELS.POLLER_SET_INTERVAL, seconds),
+  providers: {
+    snapshot: (): Promise<ProvidersSnapshotResult> =>
+      ipcRenderer.invoke(IPC_INVOKE_CHANNELS.PROVIDERS_SNAPSHOT),
+    refresh: (providerId?: ProviderId): Promise<ProvidersRefreshResult> =>
+      ipcRenderer.invoke(IPC_INVOKE_CHANNELS.PROVIDERS_REFRESH, providerId),
   },
 
   settings: {
     get: (): Promise<WidgetSettings> =>
       ipcRenderer.invoke(IPC_INVOKE_CHANNELS.SETTINGS_GET),
-    update: (patch: Partial<WidgetSettings>): Promise<SettingsUpdateResult> =>
+    update: (patch: SettingsPatch): Promise<SettingsUpdateResult> =>
       ipcRenderer.invoke(IPC_INVOKE_CHANNELS.SETTINGS_UPDATE, patch),
   },
 
@@ -147,8 +140,8 @@ const api: QuotaWidgetApi = {
   },
 
   events: {
-    onUsageUpdated: (listener: (event: UsageUpdatedEvent) => void) =>
-      subscribe(IPC_ON_CHANNELS.USAGE_UPDATED, listener),
+    onProviderState: (listener: (event: ProviderStateEvent) => void) =>
+      subscribe(IPC_ON_CHANNELS.PROVIDER_STATE, listener),
     onThresholdCrossed: (listener: (event: ThresholdCrossedEvent) => void) =>
       subscribe(IPC_ON_CHANNELS.NOTIFICATION_THRESHOLD, listener),
     onAuthExpired: (listener: (event: AuthExpiredEvent) => void) =>
@@ -157,8 +150,6 @@ const api: QuotaWidgetApi = {
       subscribeBare(IPC_ON_CHANNELS.AUTH_LOGIN_SUCCESS, listener),
     onLoginWindowOpened: (listener: (event: LoginWindowOpenedEvent) => void) =>
       subscribe(IPC_ON_CHANNELS.AUTH_LOGIN_WINDOW_OPENED, listener),
-    onPollerError: (listener: (event: PollerErrorEvent) => void) =>
-      subscribe(IPC_ON_CHANNELS.POLLER_ERROR, listener),
     onRefreshNow: (listener: () => void) =>
       subscribeBare(IPC_ON_CHANNELS.ACTION_REFRESH_NOW, listener),
     onOpenSettings: (listener: () => void) =>

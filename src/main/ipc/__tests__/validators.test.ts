@@ -111,21 +111,20 @@ describe("pickSettingsPatch", () => {
 
   it("keeps only the recognised keys", () => {
     const patch = pickSettingsPatch({
-      pollingInterval: 45,
+      keepInTray: false,
       theme: "dark",
       __proto__: { polluted: true },
       apiKey: "sk-ant-secret",
       nested: { deep: true },
     });
 
-    expect(patch).toEqual({ pollingInterval: 45, theme: "dark" });
+    expect(patch).toEqual({ keepInTray: false, theme: "dark" });
     expect("apiKey" in patch).toBe(false);
     expect("nested" in patch).toBe(false);
   });
 
   it("drops keys whose type is wrong", () => {
     const patch = pickSettingsPatch({
-      pollingInterval: "60",
       startOnBoot: "yes",
       keepInTray: 1,
       theme: "neon",
@@ -135,25 +134,40 @@ describe("pickSettingsPatch", () => {
     expect(patch).toEqual({});
   });
 
+  it("keeps a provider block partial", () => {
+    const patch = pickSettingsPatch({
+      providers: { claude: { intervalSec: 45 } },
+    });
+
+    // enabled and thresholds were not sent, so they must not appear: the
+    // merge in SettingsManager treats every present key as a write.
+    expect(patch.providers).toEqual({ claude: { intervalSec: 45 } });
+  });
+
+  it("drops unknown providers and blocks that are not objects", () => {
+    expect(
+      pickSettingsPatch({
+        providers: { notaprovider: { enabled: true }, claude: "on" },
+      }),
+    ).toEqual({});
+  });
+
   it("copies threshold arrays instead of aliasing them", () => {
     const thresholds = [10, 20];
-    const patch = pickSettingsPatch({ notificationThresholds: thresholds });
+    const patch = pickSettingsPatch({ providers: { claude: { thresholds } } });
 
-    expect(patch.notificationThresholds).toEqual([10, 20]);
-    expect(patch.notificationThresholds).not.toBe(thresholds);
+    expect(patch.providers?.claude?.thresholds).toEqual([10, 20]);
+    expect(patch.providers?.claude?.thresholds).not.toBe(thresholds);
   });
 
   it("rejects threshold lists with bad members or absurd length", () => {
-    expect(pickSettingsPatch({ notificationThresholds: [10, "20"] })).toEqual(
-      {},
-    );
-    expect(pickSettingsPatch({ notificationThresholds: [0] })).toEqual({});
-    expect(pickSettingsPatch({ notificationThresholds: [101] })).toEqual({});
-    expect(
-      pickSettingsPatch({
-        weeklyNotificationThresholds: Array.from({ length: 17 }, () => 50),
-      }),
-    ).toEqual({});
+    const reject = (thresholds: unknown): unknown =>
+      pickSettingsPatch({ providers: { claude: { thresholds } } });
+
+    expect(reject([10, "20"])).toEqual({});
+    expect(reject([0])).toEqual({});
+    expect(reject([101])).toEqual({});
+    expect(reject(Array.from({ length: 17 }, () => 50))).toEqual({});
   });
 
   it("bounds the shortcut length", () => {
@@ -170,9 +184,10 @@ describe("pickSettingsPatch", () => {
 
   it("accepts a full, valid settings object", () => {
     const full = {
-      pollingInterval: 90,
-      notificationThresholds: [50, 90],
-      weeklyNotificationThresholds: [75],
+      providers: {
+        claude: { enabled: true, intervalSec: 90, thresholds: [50, 90] },
+        codex: { enabled: false },
+      },
       enableDesktopNotifications: false,
       enableBannerNotifications: true,
       startOnBoot: true,

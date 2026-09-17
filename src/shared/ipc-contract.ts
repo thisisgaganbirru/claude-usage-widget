@@ -16,10 +16,11 @@ import type {
   LoginFailureReason,
   ProviderAccount,
   ProviderType,
+  SettingsPatch,
   ThresholdCrossedEvent,
-  UsageData,
   WidgetSettings,
 } from "./types";
+import type { ProviderId, ProviderState } from "./usage";
 
 export interface AuthLoginResult {
   success: boolean;
@@ -54,20 +55,26 @@ export interface AuthSetActiveAccountResult {
   accountId: string;
 }
 
-export interface UsageCurrentResult {
-  provider: ProviderType;
-  usageData: UsageData | null;
+/**
+ * One provider's current state. Every timestamp inside is an ISO 8601 string,
+ * never a `Date`: structured clone would survive one, but the renderer used to
+ * receive a half-revived object and call `new Date()` on fields that were
+ * already dates. Strings on the wire, parsed once at the edge, removes the
+ * question entirely.
+ */
+export interface ProviderStateEntry {
+  providerId: ProviderId;
+  state: ProviderState;
 }
 
-export interface PollerStateResult {
-  success: boolean;
-  isActive: boolean;
-  provider?: ProviderType;
+export interface ProvidersSnapshotResult {
+  providers: ProviderStateEntry[];
 }
 
-export interface PollerIntervalResult {
+export interface ProvidersRefreshResult {
   success: boolean;
-  error?: string;
+  /** Which providers were asked to poll; empty when none are enabled. */
+  providers: ProviderId[];
 }
 
 export interface SettingsUpdateResult {
@@ -97,14 +104,7 @@ export interface WindowSetPinnedResult {
   pinned: boolean;
 }
 
-export interface UsageUpdatedEvent {
-  usageData: UsageData;
-}
-
-export interface PollerErrorEvent {
-  provider: ProviderType;
-  error: string;
-}
+export type ProviderStateEvent = ProviderStateEntry;
 
 export interface LoginWindowOpenedEvent {
   provider: ProviderType;
@@ -126,19 +126,16 @@ export interface QuotaWidgetApi {
     ): Promise<AuthSetActiveAccountResult>;
   };
 
-  readonly usage: {
-    getCurrent(provider: ProviderType): Promise<UsageCurrentResult>;
-  };
-
-  readonly poller: {
-    start(provider: ProviderType): Promise<PollerStateResult>;
-    stop(): Promise<PollerStateResult>;
-    setInterval(seconds: number): Promise<PollerIntervalResult>;
+  readonly providers: {
+    /** Every provider's current state, for a renderer that just mounted. */
+    snapshot(): Promise<ProvidersSnapshotResult>;
+    /** Poll now. Omit the id to refresh every enabled provider. */
+    refresh(providerId?: ProviderId): Promise<ProvidersRefreshResult>;
   };
 
   readonly settings: {
     get(): Promise<WidgetSettings>;
-    update(patch: Partial<WidgetSettings>): Promise<SettingsUpdateResult>;
+    update(patch: SettingsPatch): Promise<SettingsUpdateResult>;
   };
 
   readonly app: {
@@ -158,7 +155,7 @@ export interface QuotaWidgetApi {
   };
 
   readonly events: {
-    onUsageUpdated(listener: (event: UsageUpdatedEvent) => void): Unsubscribe;
+    onProviderState(listener: (event: ProviderStateEvent) => void): Unsubscribe;
     onThresholdCrossed(
       listener: (event: ThresholdCrossedEvent) => void,
     ): Unsubscribe;
@@ -167,7 +164,6 @@ export interface QuotaWidgetApi {
     onLoginWindowOpened(
       listener: (event: LoginWindowOpenedEvent) => void,
     ): Unsubscribe;
-    onPollerError(listener: (event: PollerErrorEvent) => void): Unsubscribe;
     onRefreshNow(listener: () => void): Unsubscribe;
     onOpenSettings(listener: () => void): Unsubscribe;
   };

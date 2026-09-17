@@ -1,5 +1,4 @@
 import { app, BrowserWindow, Notification, globalShortcut } from "electron";
-import { UsagePoller } from "@main/data/usage-poller";
 import { openLoginWindow } from "@main/auth/login-window";
 import {
   SessionManager,
@@ -10,17 +9,19 @@ import {
   listAccounts,
   setActiveAccount,
 } from "@main/auth/session-manager";
-import { clearOrgIdCache } from "@main/data/usage-fetcher";
 import { createLogger } from "@main/logging/logger";
+import { thresholdNotification } from "@main/notifications";
+import { clearClaudeOrgCache } from "@main/providers/claude";
+import type { Scheduler } from "@main/scheduler";
 import { openExternalFromAllowlist } from "@main/security/policy";
 import { SettingsManager } from "@main/settings/settings-manager";
 import { createIpcRegistrar, type IpcRegistrar } from "@main/ipc/typed-ipc";
 import {
   isAccountId,
   isExternalUrlCandidate,
-  isFiniteNumber,
   isWindowDimension,
   pickSettingsPatch,
+  toOptionalProviderId,
   toOptionalProvider,
   toProvider,
 } from "@main/ipc/validators";
@@ -38,23 +39,16 @@ import type {
   AuthSessionResult,
   AuthSetActiveAccountResult,
   OpenExternalResult,
-  PollerIntervalResult,
-  PollerStateResult,
+  ProvidersRefreshResult,
+  ProvidersSnapshotResult,
+  ProviderStateEntry,
   SettingsUpdateResult,
-  UsageCurrentResult,
   WindowPinnedResult,
   WindowResizeResult,
   WindowSetPinnedResult,
 } from "@shared/ipc-contract";
-import {
-  AuthExpiredEvent,
-  ProviderType,
-  ThresholdCrossedEvent,
-} from "@shared/types";
-import {
-  POLLING_INTERVAL_MAX_SEC,
-  POLLING_INTERVAL_MIN_SEC,
-} from "@main/settings/normalize";
+import type { ThresholdCrossedEvent } from "@shared/types";
+import type { ProviderId } from "@shared/usage";
 
 const log = createLogger("ipc:handlers");
 
@@ -70,11 +64,11 @@ export interface WindowControls {
   setIgnoreMouseEvents(ignore: boolean): void;
 }
 
-let usagePoller: UsagePoller | null = null;
+let activeScheduler: Scheduler | null = null;
 let registeredQuickEntryShortcut: string | null = null;
 let isWillQuitCleanupHooked = false;
 let activeRegistrar: IpcRegistrar | null = null;
-let arePollerListenersAttached = false;
+let areSchedulerListenersAttached = false;
 
 function registerQuickEntryShortcut(
   shortcut: string,
@@ -125,37 +119,33 @@ export function cleanupGlobalShortcuts(): void {
 
 function showThresholdNotification(event: ThresholdCrossedEvent): void {
   if (!Notification.isSupported()) return;
-
-  const roundedUsage = Math.round(event.percentage);
-  const providerLabel = event.provider === "chatgpt" ? "ChatGPT" : "Claude";
-  const body =
-    event.scope === "weekly"
-      ? `Your weekly limit crossed ${event.threshold}%. Use wisely.`
-      : `Current session usage reached ${roundedUsage}% (alert threshold ${event.threshold}%).`;
-
-  const notification = new Notification({
-    title: `${providerLabel} Usage Alert`,
-    body,
-    silent: false,
-  });
-  notification.show();
+  const { title, body } = thresholdNotification(event);
+  new Notification({ title, body, silent: false }).show();
 }
 
 /**
- * Wire the poller's events to whichever window is current. The listeners are
- * attached once for the process lifetime and read `activeRegistrar`, so a
- * window recreated on `activate` does not stack a second set of listeners on
- * the same poller.
+ * Forward scheduler events to whichever window is current. Attached once for
+ * the process lifetime and reading `activeRegistrar`, so a window recreated on
+ * `activate` does not stack a second set of listeners on the same scheduler.
  */
-function attachPollerListeners(poller: UsagePoller): void {
-  if (arePollerListenersAttached) return;
-  arePollerListenersAttached = true;
+function attachSchedulerListeners(scheduler: Scheduler): void {
+  if (areSchedulerListenersAttached) return;
+  areSchedulerListenersAttached = true;
 
-  poller.on("usageUpdate", (usageData) => {
-    activeRegistrar?.send(IPC_ON_CHANNELS.USAGE_UPDATED, { usageData });
+  scheduler.on("state", (entry: ProviderStateEntry) => {
+    activeRegistrar?.send(IPC_ON_CHANNELS.PROVIDER_STATE, entry);
+
+    // The auth store lives on a different axis from the usage cards: it drives
+    // the login view, so it gets its own event rather than parsing states.
+    if (entry.state.kind === "needs-auth") {
+      activeRegistrar?.send(IPC_ON_CHANNELS.AUTH_EXPIRED, {
+        provider: entry.providerId,
+        message: entry.state.hint,
+      });
+    }
   });
 
-  poller.on("thresholdCrossed", (event: ThresholdCrossedEvent) => {
+  scheduler.on("threshold", (event: ThresholdCrossedEvent) => {
     const settings = SettingsManager.get();
     if (settings.enableBannerNotifications) {
       activeRegistrar?.send(IPC_ON_CHANNELS.NOTIFICATION_THRESHOLD, event);
@@ -163,17 +153,6 @@ function attachPollerListeners(poller: UsagePoller): void {
     if (settings.enableDesktopNotifications) {
       showThresholdNotification(event);
     }
-  });
-
-  poller.on("authExpired", (event: AuthExpiredEvent) => {
-    activeRegistrar?.send(IPC_ON_CHANNELS.AUTH_EXPIRED, event);
-  });
-
-  poller.on("pollError", (event: { provider: ProviderType; error: Error }) => {
-    activeRegistrar?.send(IPC_ON_CHANNELS.POLLER_ERROR, {
-      provider: event.provider,
-      error: event.error.message,
-    });
   });
 }
 
@@ -184,11 +163,11 @@ function attachPollerListeners(poller: UsagePoller): void {
  */
 export function registerIPCHandlers(
   mainWindow: BrowserWindow,
-  poller: UsagePoller,
+  scheduler: Scheduler,
   windowControls: WindowControls,
   rendererOrigins: readonly string[],
 ): IpcRegistrar {
-  usagePoller = poller;
+  activeScheduler = scheduler;
 
   activeRegistrar?.dispose();
   const ipc = createIpcRegistrar(mainWindow, rendererOrigins);
@@ -233,9 +212,9 @@ export function registerIPCHandlers(
         };
       }
 
-      usagePoller?.setProvider(provider);
-      if (usagePoller && !usagePoller.isActive()) usagePoller.start(provider);
-      else void usagePoller?.refreshNow(provider);
+      // A fresh credential is worth reading straight away, and a provider the
+      // scheduler had parked on needs-auth has no timer left to wait for.
+      void scheduler.refresh(provider);
 
       return { success: true, isAuthenticated: true, provider };
     },
@@ -248,8 +227,8 @@ export function registerIPCHandlers(
       const provider = toProvider(providerInput);
       log.info("logout requested", { provider });
       clearSession(provider);
-      if (provider === "claude") clearOrgIdCache();
-      usagePoller?.stop(provider);
+      if (provider === "claude") clearClaudeOrgCache();
+      void scheduler.refresh(provider);
       return { success: true, provider };
     },
   );
@@ -261,10 +240,10 @@ export function registerIPCHandlers(
       log.info("logout everywhere requested");
       clearAllSessions("claude");
       clearAllSessions("chatgpt");
-      clearOrgIdCache();
+      clearClaudeOrgCache();
       await clearSessionCookies("claude");
       await clearSessionCookies("chatgpt");
-      usagePoller?.stop();
+      await scheduler.refresh();
       return { success: true };
     },
   );
@@ -273,11 +252,7 @@ export function registerIPCHandlers(
     IPC_INVOKE_CHANNELS.AUTH_CHECK_SESSION,
     (_event, providerInput): AuthSessionResult => {
       const provider = toProvider(providerInput);
-      const isAuthenticated = isLoggedIn(provider);
-      if (isAuthenticated && usagePoller && !usagePoller.isActive(provider)) {
-        usagePoller.start(provider);
-      }
-      return { provider, isAuthenticated };
+      return { provider, isAuthenticated: isLoggedIn(provider) };
     },
   );
 
@@ -297,58 +272,26 @@ export function registerIPCHandlers(
         return { success: false, provider, accountId: "" };
       }
       const success = setActiveAccount(provider, accountIdInput);
-      if (success) {
-        usagePoller?.stop(provider);
-        usagePoller?.start(provider);
-      }
+      if (success) void scheduler.refresh(provider);
       return { success, provider, accountId: accountIdInput };
     },
   );
 
   ipc.handle(
-    IPC_INVOKE_CHANNELS.USAGE_GET_CURRENT,
-    (_event, providerInput): UsageCurrentResult => {
-      const provider = toProvider(providerInput);
-      const usageData = usagePoller?.getLastUsageData(provider) ?? null;
-      return { provider, usageData };
-    },
+    IPC_INVOKE_CHANNELS.PROVIDERS_SNAPSHOT,
+    (): ProvidersSnapshotResult => ({ providers: scheduler.snapshot() }),
   );
 
   ipc.handle(
-    IPC_INVOKE_CHANNELS.POLLER_START,
-    (_event, providerInput): PollerStateResult => {
-      const provider = toProvider(providerInput);
-      if (!usagePoller) return { success: false, isActive: false };
-      if (!usagePoller.isActive(provider)) usagePoller.start(provider);
-      else void usagePoller.refreshNow(provider);
-      return {
-        success: true,
-        isActive: usagePoller.isActive(provider),
-        provider,
-      };
-    },
-  );
-
-  ipc.handle(IPC_INVOKE_CHANNELS.POLLER_STOP, (): PollerStateResult => {
-    usagePoller?.stop();
-    return { success: true, isActive: false };
-  });
-
-  ipc.handle(
-    IPC_INVOKE_CHANNELS.POLLER_SET_INTERVAL,
-    (_event, secondsInput): PollerIntervalResult => {
-      if (
-        !isFiniteNumber(secondsInput) ||
-        secondsInput < POLLING_INTERVAL_MIN_SEC ||
-        secondsInput > POLLING_INTERVAL_MAX_SEC
-      ) {
-        return {
-          success: false,
-          error: `Interval must be between ${POLLING_INTERVAL_MIN_SEC}-${POLLING_INTERVAL_MAX_SEC} seconds`,
-        };
-      }
-      usagePoller?.setPollingInterval(secondsInput);
-      return { success: true };
+    IPC_INVOKE_CHANNELS.PROVIDERS_REFRESH,
+    async (_event, providerInput): Promise<ProvidersRefreshResult> => {
+      const providerId = toOptionalProviderId(providerInput);
+      const targets: ProviderId[] =
+        providerId === undefined
+          ? scheduler.snapshot().map((entry) => entry.providerId)
+          : [providerId];
+      await scheduler.refresh(providerId);
+      return { success: true, providers: targets };
     },
   );
 
@@ -359,9 +302,10 @@ export function registerIPCHandlers(
     (_event, patchInput): SettingsUpdateResult => {
       const patch = pickSettingsPatch(patchInput);
       const updated = SettingsManager.update(patch);
-      if (patch.pollingInterval !== undefined && usagePoller) {
-        usagePoller.setPollingInterval(updated.pollingInterval);
-      }
+
+      // The scheduler re-reads settings itself; this only tells it when.
+      if (patch.providers !== undefined) scheduler.applySettings();
+
       if (patch.quickEntryShortcut !== undefined) {
         registerQuickEntryShortcut(updated.quickEntryShortcut, mainWindow);
       }
@@ -419,17 +363,14 @@ export function registerIPCHandlers(
     windowControls.setIgnoreMouseEvents(Boolean(ignoreInput));
   });
 
-  attachPollerListeners(poller);
+  attachSchedulerListeners(scheduler);
 
-  // Kick off any provider that already has a saved session.
-  if (SessionManager.hasAnySession()) {
-    if (SessionManager.isAuthenticated("claude")) poller.start("claude");
-    if (SessionManager.isAuthenticated("chatgpt")) poller.start("chatgpt");
-  }
+  // A saved session is a reason to read now rather than wait out an interval.
+  if (SessionManager.hasAnySession()) void scheduler.refresh();
 
   return ipc;
 }
 
-export function getPoller(): UsagePoller | null {
-  return usagePoller;
+export function getScheduler(): Scheduler | null {
+  return activeScheduler;
 }

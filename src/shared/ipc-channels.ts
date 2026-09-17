@@ -13,10 +13,8 @@ export const IPC_INVOKE_CHANNELS = {
   AUTH_CHECK_SESSION: "auth:checkSession",
   AUTH_LIST_ACCOUNTS: "auth:listAccounts",
   AUTH_SET_ACTIVE_ACCOUNT: "auth:setActiveAccount",
-  USAGE_GET_CURRENT: "usage:getCurrent",
-  POLLER_START: "poller:start",
-  POLLER_STOP: "poller:stop",
-  POLLER_SET_INTERVAL: "poller:setInterval",
+  PROVIDERS_SNAPSHOT: "providers:snapshot",
+  PROVIDERS_REFRESH: "providers:refresh",
   SETTINGS_GET: "settings:get",
   SETTINGS_UPDATE: "settings:update",
   APP_GET_VERSION: "app:getVersion",
@@ -33,12 +31,12 @@ export const IPC_SEND_CHANNELS = {
 } as const;
 
 export const IPC_ON_CHANNELS = {
-  USAGE_UPDATED: "usage:updated",
+  /** One provider's state changed: a reading, an error, or a lost session. */
+  PROVIDER_STATE: "providers:state",
   NOTIFICATION_THRESHOLD: "notification:threshold",
   AUTH_EXPIRED: "auth:expired",
   AUTH_LOGIN_SUCCESS: "auth:login-success",
   AUTH_LOGIN_WINDOW_OPENED: "auth:login-window-opened",
-  POLLER_ERROR: "poller:error",
   ACTION_REFRESH_NOW: "action:refreshNow",
   ACTION_OPEN_SETTINGS: "action:openSettings",
 } as const;

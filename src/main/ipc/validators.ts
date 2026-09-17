@@ -6,7 +6,13 @@
  * place that assumption gets checked, and they are pure so they can be tested
  * without Electron.
  */
-import type { ProviderType, WidgetSettings } from "@shared/types";
+import type {
+  ProviderSettings,
+  ProviderType,
+  SettingsPatch,
+  WidgetSettings,
+} from "@shared/types";
+import { isProviderId, type ProviderId } from "@shared/usage";
 
 export const PROVIDERS: readonly ProviderType[] = ["claude", "chatgpt"];
 
@@ -45,6 +51,14 @@ export function toOptionalProvider(value: unknown): ProviderType | undefined {
   return isProvider(value) ? value : undefined;
 }
 
+/**
+ * Any provider id, including the ones this app reads locally rather than
+ * logging into. `undefined` means "all of them" at every call site.
+ */
+export function toOptionalProviderId(value: unknown): ProviderId | undefined {
+  return isProviderId(value) ? value : undefined;
+}
+
 export function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
@@ -77,31 +91,59 @@ function isThresholdList(value: unknown): value is number[] {
 }
 
 /**
+ * One provider block from an untrusted patch. A field the renderer left out
+ * stays out, so the merge in SettingsManager keeps the stored value rather
+ * than silently resetting it to a default.
+ */
+function pickProviderBlock(value: unknown): Partial<ProviderSettings> | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  const input = value as Record<string, unknown>;
+  const block: Partial<ProviderSettings> = {};
+
+  if (typeof input.enabled === "boolean") block.enabled = input.enabled;
+  if (isFiniteNumber(input.intervalSec)) block.intervalSec = input.intervalSec;
+  if (isThresholdList(input.thresholds)) {
+    block.thresholds = [...input.thresholds];
+  }
+
+  return Object.keys(block).length > 0 ? block : null;
+}
+
+function pickProviders(value: unknown): SettingsPatch["providers"] {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const picked: Partial<Record<ProviderId, Partial<ProviderSettings>>> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!isProviderId(key)) continue;
+    const block = pickProviderBlock(raw);
+    if (block !== null) picked[key] = block;
+  }
+
+  return Object.keys(picked).length > 0 ? picked : undefined;
+}
+
+/**
  * Take an untrusted object and return only the settings keys we recognise,
  * each one type-checked. Unknown keys are dropped rather than merged, so a
  * compromised renderer cannot write arbitrary data into the settings store.
  *
  * Range clamping still belongs to normalizeSettings; this decides membership.
  */
-export function pickSettingsPatch(value: unknown): Partial<WidgetSettings> {
+export function pickSettingsPatch(value: unknown): SettingsPatch {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return {};
   }
 
   const input = value as Record<string, unknown>;
-  const patch: Partial<WidgetSettings> = {};
+  const patch: SettingsPatch = {};
 
-  if (isFiniteNumber(input.pollingInterval)) {
-    patch.pollingInterval = input.pollingInterval;
-  }
-  if (isThresholdList(input.notificationThresholds)) {
-    patch.notificationThresholds = [...input.notificationThresholds];
-  }
-  if (isThresholdList(input.weeklyNotificationThresholds)) {
-    patch.weeklyNotificationThresholds = [
-      ...input.weeklyNotificationThresholds,
-    ];
-  }
+  const providers = pickProviders(input.providers);
+  if (providers !== undefined) patch.providers = providers;
+
   if (typeof input.enableDesktopNotifications === "boolean") {
     patch.enableDesktopNotifications = input.enableDesktopNotifications;
   }
