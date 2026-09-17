@@ -13,15 +13,8 @@ import type {
   ProviderUsage,
 } from "@shared/usage";
 
-/**
- * A secret plus the metadata needed to decide whether it is still usable.
- * `secret` never crosses the IPC boundary and never reaches a log line.
- */
-export interface Credential {
+interface CredentialBase {
   providerId: ProviderId;
-  /** How the secret is presented to the vendor. */
-  kind: "cookie" | "bearer";
-  secret: string;
   /**
    * Expiry the credential itself carries (cookie expiry, token `expiresAt`),
    * or null when it is open-ended. Never a hardcoded age.
@@ -30,6 +23,35 @@ export interface Credential {
   /** Non-secret identity, shown before the first successful fetch. */
   accountLabel?: string;
 }
+
+/**
+ * A secret we present to a vendor. `secret` never crosses the IPC boundary
+ * and never reaches a log line.
+ */
+export interface SecretCredential extends CredentialBase {
+  /** How the secret is presented to the vendor. */
+  kind: "cookie" | "bearer";
+  secret: string;
+}
+
+/**
+ * A data source this machine already has: a file a vendor's own CLI writes.
+ * There is no secret to present, so there is none to hold, and `source` is a
+ * path rather than a value.
+ */
+export interface LocalCredential extends CredentialBase {
+  kind: "local";
+  /** Directory or file the provider reads. Safe to log. */
+  source: string;
+  expiresAt: null;
+}
+
+/**
+ * What a provider found. The union is what lets a file-backed provider avoid
+ * carrying an empty string where a secret would go: "there is no secret" is a
+ * different shape, not a sentinel value.
+ */
+export type Credential = SecretCredential | LocalCredential;
 
 export interface ProviderErrorOptions {
   cause?: unknown;
