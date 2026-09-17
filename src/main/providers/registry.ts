@@ -7,12 +7,14 @@ import type { ProviderId } from "@shared/usage";
 import { chatgptProvider } from "./chatgpt";
 import { claudeProvider } from "./claude";
 import { codexProvider } from "./codex";
+import { copilotProvider } from "./copilot";
 import type { UsageProvider } from "./types";
 
 const REGISTRY: ReadonlyMap<ProviderId, UsageProvider> = new Map([
   [claudeProvider.id, claudeProvider],
   [chatgptProvider.id, chatgptProvider],
   [codexProvider.id, codexProvider],
+  [copilotProvider.id, copilotProvider],
 ]);
 
 export function getProvider(id: ProviderId): UsageProvider | null {
