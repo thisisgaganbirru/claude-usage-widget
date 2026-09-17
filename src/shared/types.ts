@@ -1,31 +1,18 @@
 /**
- * Shared TypeScript types across main and renderer processes
+ * Shared types across main and renderer processes.
+ *
+ * The usage model itself lives in `./usage.ts`. What is left here is the
+ * app's own state: accounts, settings, and the events the main process
+ * pushes to the renderer.
  */
+import type { ProviderId } from "./usage";
 
-export type ProviderType = "claude" | "chatgpt";
-
-export interface UsageData {
-  provider: ProviderType;
-  // 5-hour rolling window (current session)
-  currentUsage: number; // five_hour.utilization (0-100 %)
-  planLimit: number; // Always 100 (utilization is already %)
-  percentageUsed: number; // five_hour.utilization
-  resetTime: Date | null; // five_hour.resets_at — null when no active session
-  sessionActive: boolean; // true when five_hour exists in API response
-
-  // 7-day rolling window
-  sevenDayUsage: number; // seven_day.utilization (0-100 %)
-  sevenDayResetTime: Date; // seven_day.resets_at
-
-  // Per-model 7-day utilization (null if not tracked / not on Pro)
-  opusUsage: number | null; // seven_day_opus.utilization
-  sonnetUsage: number | null; // seven_day_sonnet.utilization
-
-  planType: string; // "Pro" | "Pro+" (extra_usage.is_enabled)
-  modelInfo: string; // Derived from which model has usage
-  userName: string; // Org name from /api/organizations
-  timestamp: Date;
-}
+/**
+ * Providers whose credential this app captures itself, through a sign-in
+ * window, rather than reading one a vendor CLI already wrote to disk. Only
+ * these have accounts, a login flow and a logout.
+ */
+export type ProviderType = Extract<ProviderId, "claude" | "chatgpt">;
 
 export interface ProviderAccount {
   id: string;
@@ -37,16 +24,40 @@ export interface ProviderAccount {
   updatedAt: number;
 }
 
+export const SETTINGS_VERSION = 2;
+
+/** Per-provider polling and alerting. Absent providers are simply not polled. */
+export interface ProviderSettings {
+  enabled: boolean;
+  /** Seconds between polls, clamped to POLLING_INTERVAL_{MIN,MAX}_SEC. */
+  intervalSec: number;
+  /** Percentages that raise an alert, applied to every window this provider reports. */
+  thresholds: number[];
+}
+
 export interface WidgetSettings {
-  pollingInterval: number; // in seconds (30-300)
-  notificationThresholds: number[]; // [50, 75, 90, 95]
-  weeklyNotificationThresholds: number[]; // [50, 75, 90, 100]
+  version: typeof SETTINGS_VERSION;
+  providers: Record<ProviderId, ProviderSettings>;
   enableDesktopNotifications: boolean;
   enableBannerNotifications: boolean;
   startOnBoot: boolean;
   keepInTray: boolean;
   quickEntryShortcut: string;
   theme: "light" | "dark" | "auto";
+}
+
+/**
+ * What the renderer is allowed to change, and at what granularity.
+ *
+ * `providers` is partial twice over on purpose: the renderer may send one
+ * provider, and within it one field. Sending a whole `ProviderSettings` block
+ * to move a single slider would make every other field in that block a
+ * write too, so a stale renderer would quietly revert whatever it last read.
+ */
+export interface SettingsPatch extends Partial<
+  Omit<WidgetSettings, "version" | "providers">
+> {
+  providers?: Partial<Record<ProviderId, Partial<ProviderSettings>>>;
 }
 
 export type LoginFailureReason =
@@ -63,9 +74,11 @@ export interface AuthExpiredEvent {
 }
 
 export interface ThresholdCrossedEvent {
-  provider: ProviderType;
+  providerId: ProviderId;
+  /** The window that crossed, e.g. "session" or "weekly". */
+  windowId: string;
+  /** The window's own label, used verbatim in the notification. */
+  windowLabel: string;
   threshold: number;
-  percentage: number;
-  scope: "session" | "weekly";
-  usageData: UsageData;
+  usedPercent: number;
 }

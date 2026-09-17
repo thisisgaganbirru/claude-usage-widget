@@ -1,19 +1,54 @@
-import { WidgetSettings } from "@shared/types";
+import {
+  SETTINGS_VERSION,
+  type ProviderSettings,
+  type WidgetSettings,
+} from "@shared/types";
+import { PROVIDER_IDS, type ProviderId } from "@shared/usage";
 
 export const POLLING_INTERVAL_MIN_SEC = 30;
 export const POLLING_INTERVAL_MAX_SEC = 300;
 
-export const DEFAULT_SETTINGS: WidgetSettings = {
-  pollingInterval: 60,
-  notificationThresholds: [50, 75, 90, 95],
-  weeklyNotificationThresholds: [50, 75, 90, 100],
-  enableDesktopNotifications: true,
-  enableBannerNotifications: true,
-  startOnBoot: false,
-  keepInTray: true,
-  quickEntryShortcut: "Control+Alt+Space",
-  theme: "auto",
-};
+export const DEFAULT_INTERVAL_SEC = 60;
+export const DEFAULT_THRESHOLDS = [50, 75, 90, 95];
+
+/**
+ * Only the providers that can actually read something today are on by
+ * default. P2 through P4 flip their own on as they land, so a user who
+ * upgrades does not get four cards saying "not detected".
+ */
+const ENABLED_BY_DEFAULT: ReadonlySet<ProviderId> = new Set<ProviderId>([
+  "claude",
+  "chatgpt",
+]);
+
+export function defaultProviderSettings(id: ProviderId): ProviderSettings {
+  return {
+    enabled: ENABLED_BY_DEFAULT.has(id),
+    intervalSec: DEFAULT_INTERVAL_SEC,
+    thresholds: [...DEFAULT_THRESHOLDS],
+  };
+}
+
+function defaultProviders(): Record<ProviderId, ProviderSettings> {
+  const providers = {} as Record<ProviderId, ProviderSettings>;
+  for (const id of PROVIDER_IDS) providers[id] = defaultProviderSettings(id);
+  return providers;
+}
+
+export function createDefaultSettings(): WidgetSettings {
+  return {
+    version: SETTINGS_VERSION,
+    providers: defaultProviders(),
+    enableDesktopNotifications: true,
+    enableBannerNotifications: true,
+    startOnBoot: false,
+    keepInTray: true,
+    quickEntryShortcut: "Control+Alt+Space",
+    theme: "auto",
+  };
+}
+
+export const DEFAULT_SETTINGS: WidgetSettings = createDefaultSettings();
 
 /** Keep finite percentages in (0, 100], dedupe, sort ascending. */
 export function normalizeThresholds(values: unknown): number[] {
@@ -31,60 +66,85 @@ export function normalizeThresholds(values: unknown): number[] {
   ).sort((a, b) => a - b);
 }
 
+export function clampInterval(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_INTERVAL_SEC;
+  }
+  if (value < POLLING_INTERVAL_MIN_SEC) return POLLING_INTERVAL_MIN_SEC;
+  if (value > POLLING_INTERVAL_MAX_SEC) return POLLING_INTERVAL_MAX_SEC;
+  return value;
+}
+
+function normalizeProvider(id: ProviderId, raw: unknown): ProviderSettings {
+  const defaults = defaultProviderSettings(id);
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return defaults;
+  }
+  const record = raw as Partial<ProviderSettings>;
+  const thresholds = normalizeThresholds(record.thresholds);
+
+  return {
+    enabled:
+      typeof record.enabled === "boolean" ? record.enabled : defaults.enabled,
+    intervalSec: clampInterval(record.intervalSec),
+    thresholds: thresholds.length > 0 ? thresholds : defaults.thresholds,
+  };
+}
+
 /**
  * Merge a partial (possibly untrusted) settings object over the defaults and
  * coerce every field into its valid range. Pure: no Electron, no I/O.
+ *
+ * This is the transform the stored schema is read through, so a hand-edited
+ * config file, a downgrade, or a field the next version adds all resolve to
+ * something the app can run on rather than throwing at startup.
  */
 export function normalizeSettings(
   settings: Partial<WidgetSettings> | null | undefined,
 ): WidgetSettings {
-  const merged: WidgetSettings = {
-    ...DEFAULT_SETTINGS,
-    ...(settings ?? {}),
-  };
+  const defaults = createDefaultSettings();
+  const input = settings ?? {};
 
-  if (
-    typeof merged.pollingInterval !== "number" ||
-    !Number.isFinite(merged.pollingInterval)
-  ) {
-    merged.pollingInterval = DEFAULT_SETTINGS.pollingInterval;
+  const providers = {} as Record<ProviderId, ProviderSettings>;
+  const rawProviders =
+    typeof input.providers === "object" && input.providers !== null
+      ? (input.providers as Record<string, unknown>)
+      : {};
+  for (const id of PROVIDER_IDS) {
+    providers[id] = normalizeProvider(id, rawProviders[id]);
   }
-  if (merged.pollingInterval < POLLING_INTERVAL_MIN_SEC)
-    merged.pollingInterval = POLLING_INTERVAL_MIN_SEC;
-  if (merged.pollingInterval > POLLING_INTERVAL_MAX_SEC)
-    merged.pollingInterval = POLLING_INTERVAL_MAX_SEC;
-
-  const sessionThresholds = normalizeThresholds(merged.notificationThresholds);
-  merged.notificationThresholds =
-    sessionThresholds.length > 0
-      ? sessionThresholds
-      : DEFAULT_SETTINGS.notificationThresholds;
-
-  const weeklyThresholds = normalizeThresholds(
-    merged.weeklyNotificationThresholds,
-  );
-  merged.weeklyNotificationThresholds =
-    weeklyThresholds.length > 0
-      ? weeklyThresholds
-      : DEFAULT_SETTINGS.weeklyNotificationThresholds;
-
-  merged.enableDesktopNotifications = Boolean(
-    merged.enableDesktopNotifications,
-  );
-  merged.enableBannerNotifications = Boolean(merged.enableBannerNotifications);
-  merged.startOnBoot = Boolean(merged.startOnBoot);
-  merged.keepInTray = Boolean(merged.keepInTray);
 
   const shortcut =
-    typeof merged.quickEntryShortcut === "string"
-      ? merged.quickEntryShortcut.trim()
+    typeof input.quickEntryShortcut === "string"
+      ? input.quickEntryShortcut.trim()
       : "";
-  merged.quickEntryShortcut =
-    shortcut.length > 0 ? shortcut : DEFAULT_SETTINGS.quickEntryShortcut;
 
-  if (!["light", "dark", "auto"].includes(merged.theme)) {
-    merged.theme = DEFAULT_SETTINGS.theme;
-  }
+  const theme = input.theme;
 
-  return merged;
+  return {
+    version: SETTINGS_VERSION,
+    providers,
+    enableDesktopNotifications:
+      typeof input.enableDesktopNotifications === "boolean"
+        ? input.enableDesktopNotifications
+        : defaults.enableDesktopNotifications,
+    enableBannerNotifications:
+      typeof input.enableBannerNotifications === "boolean"
+        ? input.enableBannerNotifications
+        : defaults.enableBannerNotifications,
+    startOnBoot:
+      typeof input.startOnBoot === "boolean"
+        ? input.startOnBoot
+        : defaults.startOnBoot,
+    keepInTray:
+      typeof input.keepInTray === "boolean"
+        ? input.keepInTray
+        : defaults.keepInTray,
+    quickEntryShortcut:
+      shortcut.length > 0 ? shortcut : defaults.quickEntryShortcut,
+    theme:
+      theme === "light" || theme === "dark" || theme === "auto"
+        ? theme
+        : defaults.theme,
+  };
 }
