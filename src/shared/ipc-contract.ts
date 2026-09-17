@@ -20,7 +20,10 @@ import type {
   ThresholdCrossedEvent,
   WidgetSettings,
 } from "./types";
-import type { ProviderId, ProviderState } from "./usage";
+import type {
+  ProviderId,
+  ProviderStateEntry as UsageProviderStateEntry,
+} from "./usage";
 
 export interface AuthLoginResult {
   success: boolean;
@@ -61,11 +64,12 @@ export interface AuthSetActiveAccountResult {
  * receive a half-revived object and call `new Date()` on fields that were
  * already dates. Strings on the wire, parsed once at the edge, removes the
  * question entirely.
+ *
+ * Re-exported rather than declared here: the tray aggregates the same pairs
+ * without going through IPC, so the shape belongs with the usage model and the
+ * two cannot be allowed to drift.
  */
-export interface ProviderStateEntry {
-  providerId: ProviderId;
-  state: ProviderState;
-}
+export type ProviderStateEntry = UsageProviderStateEntry;
 
 export interface ProvidersSnapshotResult {
   providers: ProviderStateEntry[];

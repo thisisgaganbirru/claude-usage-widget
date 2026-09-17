@@ -86,16 +86,76 @@ export function clampPercent(value: number): number {
   return value;
 }
 
-/** The window a card leads with: the one closest to running out. */
-export function worstWindow(windows: UsageWindow[]): UsageWindow | null {
+function highest(windows: UsageWindow[]): UsageWindow | null {
   let worst: UsageWindow | null = null;
   for (const window of windows) {
-    if (window.model !== undefined) continue;
     if (worst === null || window.usedPercent > worst.usedPercent) {
       worst = window;
     }
   }
   return worst;
+}
+
+/**
+ * The window a card leads with: the one closest to running out.
+ *
+ * Top-level windows win, because a provider that reports both a total and a
+ * per-model breakdown means the total. But some providers report nothing but
+ * per-model windows — Gemini reports one allowance per model and no overall
+ * figure — so falling back to those is the difference between a real number
+ * and a card that says "no usage reported" while the user is at 90%.
+ */
+export function worstWindow(windows: UsageWindow[]): UsageWindow | null {
+  return highest(topLevelWindows(windows)) ?? highest(modelWindows(windows));
+}
+
+/** One provider's state, as the tray and the header summary receive it. */
+export interface ProviderStateEntry {
+  providerId: ProviderId;
+  state: ProviderState;
+}
+
+/** The single worst window anywhere, and who reported it. */
+export interface WorstAcross {
+  providerId: ProviderId;
+  window: UsageWindow;
+  /** The reporting provider's data is older than twice its poll interval. */
+  stale: boolean;
+}
+
+/**
+ * The closest any enabled provider is to a wall.
+ *
+ * This is what the tray icon colours itself by, so the rule matters: a tray
+ * that tracks whichever provider polled most recently tells the user nothing,
+ * because the number changes meaning every few seconds. The highest used
+ * percentage across everything reporting is a question the icon can actually
+ * answer at a glance.
+ *
+ * Providers that are not reporting a number (not detected, needing a sign-in,
+ * erroring) contribute nothing rather than a zero. A zero would drag the icon
+ * green and say "plenty left" about a provider we cannot see at all.
+ */
+export function worstAcrossProviders(
+  entries: readonly ProviderStateEntry[],
+): WorstAcross | null {
+  let found: WorstAcross | null = null;
+
+  for (const entry of entries) {
+    if (entry.state.kind !== "ok") continue;
+    const window = worstWindow(entry.state.usage.windows);
+    if (window === null) continue;
+    if (found !== null && window.usedPercent <= found.window.usedPercent) {
+      continue;
+    }
+    found = {
+      providerId: entry.providerId,
+      window,
+      stale: entry.state.staleSince !== undefined,
+    };
+  }
+
+  return found;
 }
 
 /** Windows that stand on their own, in the order the provider listed them. */
