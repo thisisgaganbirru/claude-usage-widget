@@ -52,7 +52,8 @@ describe("normalizeSettings", () => {
     expect(settings.providers.chatgpt.enabled).toBe(true);
     expect(settings.providers.codex.enabled).toBe(true);
     expect(settings.providers.copilot.enabled).toBe(true);
-    expect(settings.providers.cursor.enabled).toBe(false);
+    expect(settings.providers.cursor.enabled).toBe(true);
+    expect(settings.providers.gemini.enabled).toBe(false);
   });
 
   it("clamps each provider interval into 30..300 seconds", () => {

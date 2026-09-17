@@ -25,6 +25,7 @@ const ENABLED_BY_DEFAULT: ReadonlySet<ProviderId> = new Set<ProviderId>([
   "chatgpt",
   "codex",
   "copilot",
+  "cursor",
 ]);
 
 export function defaultProviderSettings(id: ProviderId): ProviderSettings {

@@ -30,14 +30,25 @@ itself does.
 
 ## What the app touches
 
-Network. The app talks only to the vendors it shows quotas for. Today that
-is claude.ai:
+Network. The app talks only to the vendors it shows quotas for, and only to
+the endpoints listed here. ADR-0003 governs what each request carries: the
+headers a vendor's own client sends, written down per provider.
 
-| Endpoint                                       | Purpose                              |
-| ---------------------------------------------- | ------------------------------------ |
-| `https://claude.ai/login` (embedded window)    | Sign in; the app never sees the form |
-| `https://claude.ai/api/organizations`          | Find the account's organisation      |
-| `https://claude.ai/api/organizations/{id}/usage` | Read the usage windows             |
+| Provider | Endpoint                                          | Purpose                              |
+| -------- | ------------------------------------------------- | ------------------------------------ |
+| Claude   | `https://claude.ai/login` (embedded window)       | Sign in; the app never sees the form |
+| Claude   | `https://claude.ai/api/organizations`             | Find the account's organisation      |
+| Claude   | `https://claude.ai/api/organizations/{id}/usage`  | Read the usage windows               |
+| Claude   | `https://claude.ai/api/account`                   | Account label and plan               |
+| Claude   | `https://api.anthropic.com/api/oauth/usage`       | Usage for a Claude Code credential   |
+| Claude   | `https://api.anthropic.com/api/oauth/profile`     | Account label for the same           |
+| ChatGPT  | `https://chatgpt.com/backend-api/*`               | Plan requirements and account        |
+| Codex    | none                                              | Reads `~/.codex` only                |
+| Copilot  | `https://api.github.com/copilot_internal/user`    | Quota snapshots for the seat         |
+| Cursor   | `https://cursor.com/api/usage-summary`            | Spend and request counts             |
+
+Copilot on a GitHub Enterprise install calls `api.<enterprise-host>` in place
+of `api.github.com`, derived from the host the editor plugin signed in to.
 
 There is no telemetry, no crash reporting, no analytics, and no server of
 ours. Each vendor added later is listed here with its endpoints before it
@@ -47,6 +58,16 @@ Disk. Under the Electron `userData` folder the app writes settings, a
 random install id, and the claude.ai session cookie. Logs go to
 `main.log` in the same folder and are rotated at 2 MB. Log lines never
 include the cookie, tokens, or URLs with query strings.
+
+Other applications' files are read, never written. Where a vendor's own CLI
+or editor has already signed in, the app reads that credential in place:
+`~/.claude/.credentials.json` and the `Claude Code-credentials` keychain
+item, `~/.codex/auth.json` and its session logs, `github-copilot/apps.json`,
+and Cursor's `state.vscdb`. None of these is modified, refreshed, or copied
+into the app's own storage. Cursor's database is the one that needs care,
+because opening a SQLite file in WAL mode creates a `-shm` file beside it
+even for a read; when that sidecar is present the app copies the database to
+a private temp directory, reads the copy, and deletes it.
 
 ## Known limitations in 1.0.x
 
