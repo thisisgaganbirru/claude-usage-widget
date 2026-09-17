@@ -16,6 +16,11 @@ export interface HttpRequest {
   timeoutMs?: number;
 }
 
+export interface HttpPostRequest extends HttpRequest {
+  /** Sent verbatim. The caller picks the Content-Type header to match. */
+  body: string;
+}
+
 const DEFAULT_TIMEOUT_MS = 20000;
 
 /**
@@ -58,20 +63,24 @@ function headerValue(
 }
 
 /**
- * GET a vendor endpoint and return the body, or throw a typed ProviderError.
+ * One request, returning the body or throwing a typed ProviderError.
  *
  * The request runs on `session.defaultSession` on purpose: the credential is
  * passed as an explicit header, so this request wants an empty jar. No ambient
  * cookie rides along with it, and nothing it receives can write back into the
  * vendor's partition.
  */
-export function httpGet(request: HttpRequest): Promise<string> {
+function send(
+  method: "GET" | "POST",
+  request: HttpRequest,
+  body?: string,
+): Promise<string> {
   const { url, headers } = request;
   const timeoutMs = request.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   return new Promise<string>((resolve, reject) => {
     const outgoing = net.request({
-      method: "GET",
+      method,
       url,
       session: session.defaultSession,
       headers,
@@ -98,9 +107,9 @@ export function httpGet(request: HttpRequest): Promise<string> {
 
     outgoing.on("response", (response) => {
       const status = response.statusCode;
-      let body = "";
+      let received = "";
       response.on("data", (chunk) => {
-        body += chunk.toString();
+        received += chunk.toString();
       });
       response.on("end", () => {
         if (status === 401 || status === 403) {
@@ -140,7 +149,7 @@ export function httpGet(request: HttpRequest): Promise<string> {
           );
           return;
         }
-        finish(() => resolve(body));
+        finish(() => resolve(received));
       });
       response.on("error", (error: Error) => {
         finish(() =>
@@ -165,6 +174,21 @@ export function httpGet(request: HttpRequest): Promise<string> {
       );
     });
 
-    outgoing.end();
+    if (body === undefined) outgoing.end();
+    else outgoing.end(body);
   });
+}
+
+/** GET a vendor endpoint. */
+export function httpGet(request: HttpRequest): Promise<string> {
+  return send("GET", request);
+}
+
+/**
+ * POST to a vendor endpoint. Used by the flows that are POSTs rather than
+ * GETs by the vendor's own design: an OAuth token exchange, and Google's
+ * Code Assist endpoints, which are POST-only even for a pure read.
+ */
+export function httpPost(request: HttpPostRequest): Promise<string> {
+  return send("POST", request, request.body);
 }
