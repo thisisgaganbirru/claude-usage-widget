@@ -46,6 +46,8 @@ headers a vendor's own client sends, written down per provider.
 | Codex    | none                                              | Reads `~/.codex` only                |
 | Copilot  | `https://api.github.com/copilot_internal/user`    | Quota snapshots for the seat         |
 | Cursor   | `https://cursor.com/api/usage-summary`            | Spend and request counts             |
+| Gemini   | `https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist`   | The account's tier    |
+| Gemini   | `https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota` | Per-model allowances |
 
 Copilot on a GitHub Enterprise install calls `api.<enterprise-host>` in place
 of `api.github.com`, derived from the host the editor plugin signed in to.
@@ -63,8 +65,12 @@ Other applications' files are read, never written. Where a vendor's own CLI
 or editor has already signed in, the app reads that credential in place:
 `~/.claude/.credentials.json` and the `Claude Code-credentials` keychain
 item, `~/.codex/auth.json` and its session logs, `github-copilot/apps.json`,
-and Cursor's `state.vscdb`. None of these is modified, refreshed, or copied
-into the app's own storage. Cursor's database is the one that needs care,
+Cursor's `state.vscdb`, and `~/.gemini/oauth_creds.json`. None of these is
+modified, refreshed, or copied into the app's own storage. One consequence
+worth stating: Google's access tokens last about an hour and the app does not
+renew them, so the Gemini card reports an expired token rather than
+refreshing one. That is why Gemini ships switched off. Cursor's database is
+the one that needs care,
 because opening a SQLite file in WAL mode creates a `-shm` file beside it
 even for a read; when that sidecar is present the app copies the database to
 a private temp directory, reads the copy, and deletes it.

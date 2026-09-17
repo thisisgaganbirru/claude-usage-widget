@@ -9,6 +9,7 @@ import { claudeProvider } from "./claude";
 import { codexProvider } from "./codex";
 import { copilotProvider } from "./copilot";
 import { cursorProvider } from "./cursor";
+import { geminiProvider } from "./gemini";
 import type { UsageProvider } from "./types";
 
 const REGISTRY: ReadonlyMap<ProviderId, UsageProvider> = new Map([
@@ -17,6 +18,7 @@ const REGISTRY: ReadonlyMap<ProviderId, UsageProvider> = new Map([
   [codexProvider.id, codexProvider],
   [copilotProvider.id, copilotProvider],
   [cursorProvider.id, cursorProvider],
+  [geminiProvider.id, geminiProvider],
 ]);
 
 export function getProvider(id: ProviderId): UsageProvider | null {

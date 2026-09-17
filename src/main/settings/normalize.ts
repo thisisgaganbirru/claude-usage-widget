@@ -13,12 +13,18 @@ export const DEFAULT_THRESHOLDS = [50, 75, 90, 95];
 
 /**
  * Only the providers that can actually read something today are on by
- * default. P4 flips its own on as it lands, so a user who upgrades does not
- * get a row of cards saying "not detected".
+ * default, so a user who upgrades does not get a row of cards saying "not
+ * detected".
  *
  * Every provider that finds its credential on disk is safe to enable: with
  * the vendor's tooling absent, `discoverCredentials` returns null and the card
  * reads "not detected" without a single request going out.
+ *
+ * Gemini is the exception, and is off. Google's access tokens last about an
+ * hour and this app does not refresh them, so an enabled Gemini card would
+ * spend most of its life saying the token has expired. Someone who wants it
+ * can turn it on; nobody should have to turn off a card that is usually
+ * wrong. Enabling it by default becomes right the day a refresh lands.
  */
 const ENABLED_BY_DEFAULT: ReadonlySet<ProviderId> = new Set<ProviderId>([
   "claude",
