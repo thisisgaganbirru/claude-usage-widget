@@ -13,12 +13,17 @@ export const DEFAULT_THRESHOLDS = [50, 75, 90, 95];
 
 /**
  * Only the providers that can actually read something today are on by
- * default. P2 through P4 flip their own on as they land, so a user who
- * upgrades does not get four cards saying "not detected".
+ * default. P3 and P4 flip their own on as they land, so a user who upgrades
+ * does not get four cards saying "not detected".
+ *
+ * Codex is on by default and still costs nothing on a machine without it: it
+ * reads local files, so `discoverCredentials` returns null and the card reads
+ * "not detected" without a single request going out.
  */
 const ENABLED_BY_DEFAULT: ReadonlySet<ProviderId> = new Set<ProviderId>([
   "claude",
   "chatgpt",
+  "codex",
 ]);
 
 export function defaultProviderSettings(id: ProviderId): ProviderSettings {

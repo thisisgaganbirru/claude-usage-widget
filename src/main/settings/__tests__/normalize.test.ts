@@ -50,7 +50,7 @@ describe("normalizeSettings", () => {
 
     expect(settings.providers.claude.enabled).toBe(true);
     expect(settings.providers.chatgpt.enabled).toBe(true);
-    expect(settings.providers.codex.enabled).toBe(false);
+    expect(settings.providers.codex.enabled).toBe(true);
     expect(settings.providers.cursor.enabled).toBe(false);
   });
 
