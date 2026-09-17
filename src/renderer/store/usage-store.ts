@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { ProviderType, UsageData } from "@shared/types";
+import { IPC_INVOKE_CHANNELS } from "@shared/ipc-channels";
 
 export interface UsageStoreState {
   usageByProvider: Partial<Record<ProviderType, UsageData>>;
@@ -63,13 +64,19 @@ export const useUsageStore = create<UsageStoreState>((set, get) => ({
 
   setLoading: (provider, loading) => {
     set((state) => ({
-      isLoadingByProvider: { ...state.isLoadingByProvider, [provider]: loading },
+      isLoadingByProvider: {
+        ...state.isLoadingByProvider,
+        [provider]: loading,
+      },
     }));
   },
 
   setError: (provider, error) => {
     set((state) => ({
-      errorByProvider: { ...state.errorByProvider, [provider]: error ?? undefined },
+      errorByProvider: {
+        ...state.errorByProvider,
+        [provider]: error ?? undefined,
+      },
     }));
   },
 
@@ -91,31 +98,43 @@ export const useUsageStore = create<UsageStoreState>((set, get) => ({
         const fallback = createDefaultUsageData(provider);
         set((state) => ({
           usageByProvider: { ...state.usageByProvider, [provider]: fallback },
-          isLoadingByProvider: { ...state.isLoadingByProvider, [provider]: false },
+          isLoadingByProvider: {
+            ...state.isLoadingByProvider,
+            [provider]: false,
+          },
         }));
         return;
       }
 
       const result = await ipc.invoke(
-        "usage:getCurrent",
+        IPC_INVOKE_CHANNELS.USAGE_GET_CURRENT,
         provider,
       );
       if (result?.usageData) {
-        const usageData = normalizeUsageData(provider, result.usageData as UsageData);
+        const usageData = normalizeUsageData(
+          provider,
+          result.usageData as UsageData,
+        );
         set((state) => ({
           usageByProvider: { ...state.usageByProvider, [provider]: usageData },
           lastUpdatedByProvider: {
             ...state.lastUpdatedByProvider,
             [provider]: new Date(),
           },
-          isLoadingByProvider: { ...state.isLoadingByProvider, [provider]: false },
+          isLoadingByProvider: {
+            ...state.isLoadingByProvider,
+            [provider]: false,
+          },
           errorByProvider: { ...state.errorByProvider, [provider]: undefined },
         }));
       } else {
         const fallback = createDefaultUsageData(provider);
         set((state) => ({
           usageByProvider: { ...state.usageByProvider, [provider]: fallback },
-          isLoadingByProvider: { ...state.isLoadingByProvider, [provider]: false },
+          isLoadingByProvider: {
+            ...state.isLoadingByProvider,
+            [provider]: false,
+          },
         }));
       }
     } catch (error) {
@@ -123,7 +142,10 @@ export const useUsageStore = create<UsageStoreState>((set, get) => ({
         error instanceof Error ? error.message : "Failed to fetch usage data";
       set((state) => ({
         errorByProvider: { ...state.errorByProvider, [provider]: errorMessage },
-        isLoadingByProvider: { ...state.isLoadingByProvider, [provider]: false },
+        isLoadingByProvider: {
+          ...state.isLoadingByProvider,
+          [provider]: false,
+        },
       }));
     }
   },
@@ -148,7 +170,10 @@ export const useUsageStore = create<UsageStoreState>((set, get) => ({
           ...state.lastUpdatedByProvider,
           [provider]: undefined,
         },
-        isLoadingByProvider: { ...state.isLoadingByProvider, [provider]: false },
+        isLoadingByProvider: {
+          ...state.isLoadingByProvider,
+          [provider]: false,
+        },
         errorByProvider: { ...state.errorByProvider, [provider]: undefined },
       };
     });

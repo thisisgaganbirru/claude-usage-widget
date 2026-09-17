@@ -4,6 +4,7 @@ import { WidgetHeader, SizeOption } from "./WidgetHeader";
 import { Footer } from "./Footer";
 import { AlertBanner } from "./AlertBanner";
 import { ProviderType } from "@shared/types";
+import { IPC_INVOKE_CHANNELS } from "@shared/ipc-channels";
 
 function formatSessionReset(resetTime: Date): string {
   const diff = resetTime.getTime() - Date.now();
@@ -37,8 +38,22 @@ function ProgressBar({
       preserveAspectRatio="none"
       aria-hidden="true"
     >
-      <rect className={trackClass} x="0" y="0" width="100" height={height} rx={height / 2} />
-      <rect className={fillClass} x="0" y="0" width={width} height={height} rx={height / 2} />
+      <rect
+        className={trackClass}
+        x="0"
+        y="0"
+        width="100"
+        height={height}
+        rx={height / 2}
+      />
+      <rect
+        className={fillClass}
+        x="0"
+        y="0"
+        width={width}
+        height={height}
+        rx={height / 2}
+      />
     </svg>
   );
 }
@@ -109,7 +124,6 @@ export function MiniView({
           provider={provider}
           onProviderChange={onProviderChange}
           planType={usageData.planType}
-          userName={usageData.userName}
           selectedSize={selectedSize}
           isPinned={isPinned}
           onTogglePin={onTogglePin}
@@ -123,7 +137,9 @@ export function MiniView({
 
         <div className="px-3.5 pb-3.5 pt-2">
           <div className="mb-1 flex items-center justify-between">
-            <span className="text-xs font-semibold text-white">Current session</span>
+            <span className="text-xs font-semibold text-white">
+              Current session
+            </span>
             <span className="text-[11px] font-medium tabular-nums text-white/50">
               {Math.round(sessionPct)}% used
             </span>
@@ -157,7 +173,10 @@ export function MiniView({
             lastUpdated={lastUpdated ?? usageData.timestamp ?? null}
             label={usageData.userName}
             onRefresh={() =>
-              (window as any).electron?.ipcRenderer?.invoke("poller:start", provider)
+              (window as any).electron?.ipcRenderer?.invoke(
+                IPC_INVOKE_CHANNELS.POLLER_START,
+                provider,
+              )
             }
             paddingClass="px-0 pb-0 pt-0.5"
             borderTopClass="border-0"

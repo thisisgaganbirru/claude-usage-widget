@@ -6,7 +6,12 @@ import { CompactView } from "@renderer/components/widget/CompactView";
 import { ExpandedView } from "@renderer/components/widget/ExpandedView";
 import { SettingsPanel } from "@renderer/components/settings/SettingsPanel";
 import { SizeOption } from "@renderer/components/widget/WidgetHeader";
-import { ProviderType, ThresholdCrossedEvent, WidgetSettings } from "@shared/types";
+import {
+  ProviderType,
+  ThresholdCrossedEvent,
+  WidgetSettings,
+} from "@shared/types";
+import { IPC_INVOKE_CHANNELS, IPC_ON_CHANNELS } from "@shared/ipc-channels";
 
 const isDev = process.env.NODE_ENV === "development";
 
@@ -50,10 +55,14 @@ export const App = () => {
   const [settings, setSettings] = useState<WidgetSettings | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [isSettingsSaving, setIsSettingsSaving] = useState(false);
-  const [thresholdAlertMessage, setThresholdAlertMessage] = useState<string | null>(null);
+  const [thresholdAlertMessage, setThresholdAlertMessage] = useState<
+    string | null
+  >(null);
   const [thresholdAlertVisible, setThresholdAlertVisible] = useState(false);
   const [thresholdAlertActive, setThresholdAlertActive] = useState(false);
-  const [alertHiddenMode, setAlertHiddenMode] = useState<"none" | "ignore" | "timeout">("none");
+  const [alertHiddenMode, setAlertHiddenMode] = useState<
+    "none" | "ignore" | "timeout"
+  >("none");
   const [didShowAlertPreview, setDidShowAlertPreview] = useState(false);
   const alertTimerRef = useRef<number | null>(null);
 
@@ -87,7 +96,7 @@ export const App = () => {
         throw new Error("Settings are available inside the desktop app.");
       }
       setSettingsError(null);
-      const nextSettings = await ipc.invoke("settings:get");
+      const nextSettings = await ipc.invoke(IPC_INVOKE_CHANNELS.SETTINGS_GET);
       setSettings(nextSettings);
     } catch (error) {
       const message =
@@ -105,7 +114,7 @@ export const App = () => {
         throw new Error("Settings are available inside the desktop app.");
       }
       const result = await ipc.invoke(
-        "settings:update",
+        IPC_INVOKE_CHANNELS.SETTINGS_UPDATE,
         nextSettings,
       );
       if (result?.settings) {
@@ -127,32 +136,34 @@ export const App = () => {
     const authed = await checkSession(provider);
     const ipc = window.electron?.ipcRenderer;
     if (authed && ipc) {
-      void ipc.invoke("poller:start", provider);
+      void ipc.invoke(IPC_INVOKE_CHANNELS.POLLER_START, provider);
     }
   };
 
   const handleLogout = async () => {
     await window.electron?.ipcRenderer
-      .invoke("auth:logout", selectedProvider)
+      .invoke(IPC_INVOKE_CHANNELS.AUTH_LOGOUT, selectedProvider)
       .catch(() => {});
     setAuthenticated(false, selectedProvider);
   };
 
   const handleHardLogout = async () => {
     await window.electron?.ipcRenderer
-      .invoke("auth:logoutEverywhere")
+      .invoke(IPC_INVOKE_CHANNELS.AUTH_LOGOUT_EVERYWHERE)
       .catch(() => {});
     setAuthenticated(false);
   };
 
   const handleRemove = () => {
-    void window.electron?.ipcRenderer.invoke("app:quit").catch(() => {});
+    void window.electron?.ipcRenderer
+      .invoke(IPC_INVOKE_CHANNELS.APP_QUIT)
+      .catch(() => {});
   };
 
   const handleTogglePin = (pinned: boolean) => {
     setIsPinned(pinned);
     void window.electron?.ipcRenderer
-      .invoke("window:setPinned", pinned)
+      .invoke(IPC_INVOKE_CHANNELS.WINDOW_SET_PINNED, pinned)
       .catch(() => {});
   };
 
@@ -166,10 +177,11 @@ export const App = () => {
         !el ||
         el.tagName === "HTML" ||
         el.tagName === "BODY" ||
-        (!el.closest("[data-widget-card]") && !el.closest("[data-widget-menu]"));
+        (!el.closest("[data-widget-card]") &&
+          !el.closest("[data-widget-menu]"));
       if (isTransparent !== ignoring) {
         ignoring = isTransparent;
-        ipc.send("set-ignore-mouse-events", ignoring);
+        ipc.send(IPC_INVOKE_CHANNELS.SET_IGNORE_MOUSE_EVENTS, ignoring);
       }
     };
     window.addEventListener("mousemove", onMouseMove);
@@ -181,22 +193,24 @@ export const App = () => {
     if (!ipc) return;
     if (!isAuthenticated) {
       void ipc
-        .invoke("resize-window", 800, 600)
+        .invoke(IPC_INVOKE_CHANNELS.RESIZE_WINDOW, 800, 600)
         .catch(() => {});
       return;
     }
     if (isSettingsOpen) {
       void ipc
-        .invoke("resize-window", SETTINGS_WINDOW_SIZE[0], SETTINGS_WINDOW_SIZE[1])
+        .invoke(
+          IPC_INVOKE_CHANNELS.RESIZE_WINDOW,
+          SETTINGS_WINDOW_SIZE[0],
+          SETTINGS_WINDOW_SIZE[1],
+        )
         .catch(() => {});
       return;
     }
     const [w, h] = WINDOW_SIZES[selectedSize];
-    void ipc
-      .invoke("resize-window", w, h)
-      .catch((error) => {
-        console.error("[App] Failed to resize window:", error);
-      });
+    void ipc.invoke(IPC_INVOKE_CHANNELS.RESIZE_WINDOW, w, h).catch((error) => {
+      console.error("[App] Failed to resize window:", error);
+    });
   }, [selectedSize, isAuthenticated, isSettingsOpen]);
 
   useEffect(() => {
@@ -209,7 +223,7 @@ export const App = () => {
         const provider = claudeAuthed ? "claude" : "chatgpt";
         setSelectedProvider(provider);
         if (ipc) {
-          void ipc.invoke("poller:start", provider);
+          void ipc.invoke(IPC_INVOKE_CHANNELS.POLLER_START, provider);
         }
       },
     );
@@ -217,7 +231,7 @@ export const App = () => {
     if (!ipc) return;
 
     void ipc
-      .invoke("window:getPinned")
+      .invoke(IPC_INVOKE_CHANNELS.WINDOW_GET_PINNED)
       .then((result) => {
         if (typeof result?.pinned === "boolean") setIsPinned(result.pinned);
       })
@@ -225,7 +239,7 @@ export const App = () => {
 
     const handleLoginSuccess = () => setAuthenticated(true);
     const handleRefreshNow = () => {
-      void ipc.invoke("poller:start", selectedProvider);
+      void ipc.invoke(IPC_INVOKE_CHANNELS.POLLER_START, selectedProvider);
     };
     const handleOpenSettings = async () => {
       setIsSettingsOpen(true);
@@ -244,30 +258,33 @@ export const App = () => {
       }
     };
 
-    ipc.on("auth:login-success", handleLoginSuccess);
-    ipc.on("action:refreshNow", handleRefreshNow);
-    ipc.on("action:openSettings", handleOpenSettings);
-    ipc.on("notification:threshold", handleThreshold);
+    ipc.on(IPC_ON_CHANNELS.AUTH_LOGIN_SUCCESS, handleLoginSuccess);
+    ipc.on(IPC_ON_CHANNELS.ACTION_REFRESH_NOW, handleRefreshNow);
+    ipc.on(IPC_ON_CHANNELS.ACTION_OPEN_SETTINGS, handleOpenSettings);
+    ipc.on(IPC_ON_CHANNELS.NOTIFICATION_THRESHOLD, handleThreshold);
 
     return () => {
       ipc.removeListener(
-        "auth:login-success",
+        IPC_ON_CHANNELS.AUTH_LOGIN_SUCCESS,
         handleLoginSuccess,
       );
+      ipc.removeListener(IPC_ON_CHANNELS.ACTION_REFRESH_NOW, handleRefreshNow);
       ipc.removeListener(
-        "action:refreshNow",
-        handleRefreshNow,
-      );
-      ipc.removeListener(
-        "action:openSettings",
+        IPC_ON_CHANNELS.ACTION_OPEN_SETTINGS,
         handleOpenSettings,
       );
       ipc.removeListener(
-        "notification:threshold",
+        IPC_ON_CHANNELS.NOTIFICATION_THRESHOLD,
         handleThreshold,
       );
     };
-  }, [checkSession, loadAccounts, selectedProvider, setAuthenticated, setSelectedProvider]);
+  }, [
+    checkSession,
+    loadAccounts,
+    selectedProvider,
+    setAuthenticated,
+    setSelectedProvider,
+  ]);
 
   useEffect(() => {
     if (!isDev || !isAuthenticated || didShowAlertPreview) return;
@@ -288,7 +305,11 @@ export const App = () => {
   };
 
   const handleAlertHoverStart = () => {
-    if (thresholdAlertActive && !thresholdAlertVisible && alertHiddenMode !== "none") {
+    if (
+      thresholdAlertActive &&
+      !thresholdAlertVisible &&
+      alertHiddenMode !== "none"
+    ) {
       setThresholdAlertVisible(true);
     }
   };
@@ -299,7 +320,9 @@ export const App = () => {
     }
   };
 
-  const activeAlertMessage = thresholdAlertVisible ? thresholdAlertMessage : null;
+  const activeAlertMessage = thresholdAlertVisible
+    ? thresholdAlertMessage
+    : null;
 
   if (!isAuthenticated) {
     return (
@@ -327,7 +350,6 @@ export const App = () => {
         settings={settings}
         isSaving={isSettingsSaving}
         error={settingsError}
-        provider={selectedProvider}
         onClose={() => setIsSettingsOpen(false)}
         onSave={saveSettings}
         onLogout={handleLogout}

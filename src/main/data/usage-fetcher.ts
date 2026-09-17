@@ -218,16 +218,14 @@ export async function fetchUsageDataFromAPI(
  * Fallback: Fetch usage data by scraping the HTML page
  */
 export async function fetchUsageDataFromScraping(
-  sessionCookie: string,
+  _sessionCookie: string,
 ): Promise<UsageData> {
   throw new Error(
     "HTML scraping fallback is not implemented - CSS selectors unknown. Use API endpoint only.",
   );
 }
 
-async function fetchClaudeUsageData(
-  sessionCookie: string,
-): Promise<UsageData> {
+async function fetchClaudeUsageData(sessionCookie: string): Promise<UsageData> {
   try {
     if (isDev) console.log("[UsageFetcher] Attempting API fetch...");
     const data = await fetchUsageDataFromAPI(sessionCookie);
@@ -286,7 +284,8 @@ async function fetchChatGPTUsageData(
 
   const requirementsUrl =
     "https://chatgpt.com/backend-api/sentinel/chat-requirements";
-  const accountUrl = "https://chatgpt.com/backend-api/accounts/check/v4-2023-04-27";
+  const accountUrl =
+    "https://chatgpt.com/backend-api/accounts/check/v4-2023-04-27";
 
   const [requirementsResult, accountResult] = await Promise.allSettled([
     netGet(requirementsUrl, headers),
@@ -853,9 +852,7 @@ function parseChatGPTRequirements(data: unknown): ChatGPTParsedUsage | null {
       getNum(object, "seven_day_limit") ??
       null;
     const weeklyUsed =
-      getNum(object, "weekly_used") ??
-      getNum(object, "seven_day_used") ??
-      null;
+      getNum(object, "weekly_used") ?? getNum(object, "seven_day_used") ?? null;
     const weeklyResetRaw =
       (object.weekly_reset_at as string) ??
       (object.seven_day_reset_at as string) ??
@@ -908,9 +905,7 @@ function parseChatGPTRequirements(data: unknown): ChatGPTParsedUsage | null {
   return primary;
 }
 
-function parseChatGPTModelBreakdown(
-  candidates: Record<string, unknown>[],
-): {
+function parseChatGPTModelBreakdown(candidates: Record<string, unknown>[]): {
   primaryModelPct: number;
   secondaryModelPct: number;
   modelInfo: string;
@@ -943,7 +938,10 @@ function parseChatGPTModelBreakdown(
   };
 }
 
-function parseChatGPTAccount(data: unknown): { userName: string; planType: string } {
+function parseChatGPTAccount(data: unknown): {
+  userName: string;
+  planType: string;
+} {
   if (!data || typeof data !== "object") {
     return { userName: "ChatGPT User", planType: "Unknown" };
   }

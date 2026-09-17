@@ -4,6 +4,7 @@ import { WidgetHeader, SizeOption } from "./WidgetHeader";
 import { Footer } from "./Footer";
 import { AlertBanner } from "./AlertBanner";
 import { ProviderType } from "@shared/types";
+import { IPC_INVOKE_CHANNELS } from "@shared/ipc-channels";
 
 function formatSessionReset(resetTime: Date): string {
   const diff = resetTime.getTime() - Date.now();
@@ -47,8 +48,22 @@ function ProgressBar({
       preserveAspectRatio="none"
       aria-hidden="true"
     >
-      <rect x="0" y="0" width="100" height={height} rx={height / 2} className="fill-white/10" />
-      <rect x="0" y="0" width={width} height={height} rx={height / 2} className={fillClass} />
+      <rect
+        x="0"
+        y="0"
+        width="100"
+        height={height}
+        rx={height / 2}
+        className="fill-white/10"
+      />
+      <rect
+        x="0"
+        y="0"
+        width={width}
+        height={height}
+        rx={height / 2}
+        className={fillClass}
+      />
     </svg>
   );
 }
@@ -73,7 +88,14 @@ function StackedBar({
       preserveAspectRatio="none"
       aria-hidden="true"
     >
-      <rect x="0" y="0" width="100" height="6" rx="3" className="fill-white/10" />
+      <rect
+        x="0"
+        y="0"
+        width="100"
+        height="6"
+        rx="3"
+        className="fill-white/10"
+      />
       <rect x="0" y="0" width={o} height="6" rx="3" fill="#C15F3C" />
       <rect x={o} y="0" width={s} height="6" fill="#6b9eff" />
       <rect x={o + s} y="0" width={h} height="6" rx="3" fill="#10b981" />
@@ -191,7 +213,6 @@ export function CompactView({
           provider={provider}
           onProviderChange={onProviderChange}
           planType={usageData.planType}
-          userName={usageData.userName}
           selectedSize={selectedSize}
           isPinned={isPinned}
           onTogglePin={onTogglePin}
@@ -205,7 +226,9 @@ export function CompactView({
 
         <div className="px-3.5 pb-[11px] pt-3">
           <div className="mb-1 flex items-center justify-between">
-            <span className="text-xs font-semibold text-white">Current session</span>
+            <span className="text-xs font-semibold text-white">
+              Current session
+            </span>
             <span className="text-[11px] text-white/45">
               {Math.round(sessionPct)}% used
             </span>
@@ -213,7 +236,9 @@ export function CompactView({
 
           <div className="mb-2 text-[11px] text-white/30">
             {sessionError ? (
-              <span className="text-red-400">Something&apos;s off — try restarting the widget</span>
+              <span className="text-red-400">
+                Something&apos;s off — try restarting the widget
+              </span>
             ) : !sessionActive ? (
               "Starts when a message is sent"
             ) : (
@@ -221,14 +246,20 @@ export function CompactView({
             )}
           </div>
 
-          <ProgressBar percent={sessionPct} fillClass="fill-[#6b9eff]" height={5} />
+          <ProgressBar
+            percent={sessionPct}
+            fillClass="fill-[#6b9eff]"
+            height={5}
+          />
         </div>
 
         <div className="h-px bg-white/10" />
 
         <div className="px-3.5 pb-[11px] pt-3">
           <div className="mb-1 flex items-center justify-between">
-            <span className="text-xs font-semibold text-white">Weekly limits</span>
+            <span className="text-xs font-semibold text-white">
+              Weekly limits
+            </span>
             <span className={`text-[11px] font-semibold ${weeklyPctClass}`}>
               {Math.round(pct)}% used
             </span>
@@ -248,7 +279,9 @@ export function CompactView({
           <div className="flex flex-wrap gap-2.5">
             {models.map(({ name, used, dotClass }) => (
               <div key={name} className="flex items-center gap-1.5">
-                <div className={`h-[7px] w-[7px] shrink-0 rounded-[2px] ${dotClass}`} />
+                <div
+                  className={`h-[7px] w-[7px] shrink-0 rounded-[2px] ${dotClass}`}
+                />
                 <span className="text-[11px] text-white/45">
                   {name} {used}%
                 </span>
@@ -259,8 +292,12 @@ export function CompactView({
 
         <div className="px-3.5 pb-3 pt-0.5">
           <div className="flex items-center justify-between rounded-[10px] bg-white/5 px-3.5 py-2.5">
-            <span className="text-[11px] font-medium text-white/45">Resets in</span>
-            <span className="tracking-[0.03em] text-[#C15F3C]">{countdown}</span>
+            <span className="text-[11px] font-medium text-white/45">
+              Resets in
+            </span>
+            <span className="tracking-[0.03em] text-[#C15F3C]">
+              {countdown}
+            </span>
           </div>
         </div>
 
@@ -269,7 +306,10 @@ export function CompactView({
           lastUpdated={lastUpdated ? new Date(lastUpdated) : null}
           label={usageData.userName}
           onRefresh={() =>
-            (window as any).electron?.ipcRenderer?.invoke("poller:start", provider)
+            (window as any).electron?.ipcRenderer?.invoke(
+              IPC_INVOKE_CHANNELS.POLLER_START,
+              provider,
+            )
           }
         />
       </div>

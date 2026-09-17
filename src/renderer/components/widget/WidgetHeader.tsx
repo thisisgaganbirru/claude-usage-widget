@@ -9,7 +9,6 @@ interface WidgetHeaderProps {
   provider: ProviderType;
   onProviderChange: (provider: ProviderType) => void;
   planType: string;
-  userName?: string;
   selectedSize?: SizeOption;
   isPinned?: boolean;
   onTogglePin?: (pinned: boolean) => void;

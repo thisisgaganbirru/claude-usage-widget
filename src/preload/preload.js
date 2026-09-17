@@ -33,17 +33,12 @@ const FALLBACK_ALLOWED_CHANNELS = {
     "app:quit",
     "app:minimize",
     "app:openExternal",
-    // Browser preference channels
-    "browser:resetPreference",
-    "browser:getPreference",
     // Window channels
     "resize-window",
     "window:getPinned",
     "window:setPinned",
     // Transparent hit-test passthrough
     "set-ignore-mouse-events",
-    // Context menu
-    "menu:showContextMenu",
   ],
   send: ["set-ignore-mouse-events"],
   on: [
@@ -60,9 +55,6 @@ const FALLBACK_ALLOWED_CHANNELS = {
     // Action events
     "action:refreshNow",
     "action:openSettings",
-    // Menu events
-    "menu:sizeChange",
-    "menu:logout",
   ],
 };
 
@@ -70,7 +62,9 @@ let resolvedAllowedChannels = null;
 let isChannelFetchInFlight = false;
 
 function isStringArray(value) {
-  return Array.isArray(value) && value.every((item) => typeof item === "string");
+  return (
+    Array.isArray(value) && value.every((item) => typeof item === "string")
+  );
 }
 
 function normalizeAllowedChannels(value) {

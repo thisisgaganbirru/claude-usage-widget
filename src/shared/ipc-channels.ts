@@ -19,13 +19,10 @@ export const IPC_INVOKE_CHANNELS = {
   APP_QUIT: "app:quit",
   APP_MINIMIZE: "app:minimize",
   APP_OPEN_EXTERNAL: "app:openExternal",
-  BROWSER_RESET_PREFERENCE: "browser:resetPreference",
-  BROWSER_GET_PREFERENCE: "browser:getPreference",
   RESIZE_WINDOW: "resize-window",
   WINDOW_GET_PINNED: "window:getPinned",
   WINDOW_SET_PINNED: "window:setPinned",
   SET_IGNORE_MOUSE_EVENTS: "set-ignore-mouse-events",
-  MENU_SHOW_CONTEXT_MENU: "menu:showContextMenu",
 } as const;
 
 export const IPC_SEND_CHANNELS = {
@@ -41,8 +38,6 @@ export const IPC_ON_CHANNELS = {
   POLLER_ERROR: "poller:error",
   ACTION_REFRESH_NOW: "action:refreshNow",
   ACTION_OPEN_SETTINGS: "action:openSettings",
-  MENU_SIZE_CHANGE: "menu:sizeChange",
-  MENU_LOGOUT: "menu:logout",
 } as const;
 
 export const IPC_CHANNELS = {

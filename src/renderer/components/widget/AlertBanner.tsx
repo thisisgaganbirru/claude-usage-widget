@@ -12,7 +12,9 @@ export function AlertBanner({
   onIgnore,
 }: AlertBannerProps): React.ReactElement {
   const hasAlertPrefix = message.startsWith("Alert:");
-  const remainder = hasAlertPrefix ? message.slice("Alert:".length).trim() : message;
+  const remainder = hasAlertPrefix
+    ? message.slice("Alert:".length).trim()
+    : message;
 
   return (
     <div

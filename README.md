@@ -56,7 +56,7 @@ A real-time Claude API usage desktop widget for Windows. Displays your 5-hour se
 
 ### Prerequisites
 
-- Node.js LTS only — **18.x, 20.x, or 22.x** (odd versions like 19, 21, 23, 25 are not supported)
+- Node.js **20 or newer** (22 LTS recommended; see `.nvmrc`)
 - A Claude.ai account (Free, Pro, or Max)
 
 ### Development
@@ -71,8 +71,11 @@ npm start
 # Type-check
 npm run typecheck
 
-# Lint (type-check + guard checks)
+# Lint (type-check + ESLint + guard checks + Prettier)
 npm run lint
+
+# Unit tests
+npm test
 
 # Create production installer
 npm run make
@@ -161,7 +164,7 @@ Transparent areas around the widget card pass mouse events through to underlying
 ## Troubleshooting
 
 **`EBADENGINE` error on `npm ci`**
-→ You're on an unsupported Node.js version. Install Node.js LTS (18, 20, or 22) from nodejs.org and retry.
+→ You're on an unsupported Node.js version. Install Node.js 22 LTS from nodejs.org and retry.
 
 **Widget not visible after launch**
 → Check system tray (bottom-right `^` hidden icons), click the Claude icon

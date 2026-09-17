@@ -11,8 +11,11 @@
     "make": "electron-forge make",
     "publish": "electron-forge publish",
     "typecheck": "tsc --noEmit",
-    "lint": "npm run typecheck && node scripts/lint-guards.mjs",
-    "check": "npm run lint"
+    "lint": "npm run typecheck && eslint . && node scripts/lint-guards.mjs && prettier --check .",
+    "check": "npm run lint && npm test",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "format": "prettier --write ."
   },
   "keywords": [
     "claude",
@@ -35,22 +38,30 @@
     "@electron-forge/plugin-fuses": "^7.11.1",
     "@electron-forge/plugin-webpack": "^7.11.1",
     "@electron/fuses": "^1.8.0",
-    "@types/node": "^20.10.6",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.2",
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
     "@vercel/webpack-asset-relocator-loader": "^1.7.3",
     "autoprefixer": "^10.4.17",
     "css-loader": "^6.11.0",
     "electron": "40.1.0",
+    "eslint": "^10.10.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "file-loader": "^6.2.0",
+    "globals": "^17.12.0",
     "html-webpack-plugin": "^5.6.0",
     "node-loader": "^2.1.0",
     "postcss": "^8.4.32",
     "postcss-loader": "^7.3.4",
+    "prettier": "^3.9.6",
     "style-loader": "^3.3.4",
     "tailwindcss": "^3.4.1",
     "ts-loader": "^9.5.1",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "typescript-eslint": "^8.70.0",
+    "vitest": "^5.0.1"
   },
   "dependencies": {
     "date-fns": "^3.0.6",
@@ -60,5 +71,8 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "zustand": "^4.4.7"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

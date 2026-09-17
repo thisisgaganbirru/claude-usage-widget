@@ -1,5 +1,3 @@
-const path = require("path");
-
 const nativeRules = [
   {
     test: /native_modules[/\\].+\.node$/,

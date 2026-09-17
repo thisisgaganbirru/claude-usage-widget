@@ -1,7 +1,38 @@
-import { Tray, Menu, BrowserWindow, app, nativeImage } from "electron";
+import {
+  Tray,
+  Menu,
+  BrowserWindow,
+  app,
+  nativeImage,
+  NativeImage,
+} from "electron";
 import * as path from "path";
 import isDev from "electron-is-dev";
 import { UsageData } from "@shared/types";
+import { IPC_ON_CHANNELS } from "@shared/ipc-channels";
+
+const TRAY_ICON_SIZE = { width: 16, height: 16 };
+
+function iconPath(fileName: string): string {
+  const base = isDev ? process.cwd() : process.resourcesPath;
+  return path.join(base, "assets", "icons", fileName);
+}
+
+/** First candidate that loads to a non-empty image, or null. */
+function loadTrayIcon(candidates: string[]): NativeImage | null {
+  for (const name of candidates) {
+    try {
+      const img = nativeImage
+        .createFromPath(iconPath(name))
+        .resize(TRAY_ICON_SIZE);
+      if (!img.isEmpty()) return img;
+      console.warn(`[TrayManager] Empty tray image: ${name}`);
+    } catch (error) {
+      console.warn(`[TrayManager] Failed to load tray image ${name}:`, error);
+    }
+  }
+  return null;
+}
 
 interface TrayManagerOptions {
   onRefreshNow?: () => void | Promise<void>;
@@ -21,35 +52,12 @@ export class TrayManager {
    * Initialize system tray icon and menu
    */
   create(): void {
-    const iconPath = isDev
-      ? path.join(process.cwd(), "assets", "icons", "ClaudeIcon-Square.png")
-      : path.join(process.resourcesPath, "assets", "icons", "ClaudeIcon-Square.png");
-
-    try {
-      const img = nativeImage
-        .createFromPath(iconPath)
-        .resize({ width: 16, height: 16 });
-      if (img.isEmpty()) throw new Error(`Empty tray image: ${iconPath}`);
-      this.tray = new Tray(img);
-    } catch (error) {
-      console.warn(
-        "[TrayManager] Failed to create tray with icon, using fallback",
-      );
-      try {
-        const fallback = nativeImage
-          .createFromPath(
-            isDev
-              ? path.join(process.cwd(), "assets", "icons", "app.png")
-              : path.join(process.resourcesPath, "assets", "icons", "app.png"),
-          )
-          .resize({ width: 16, height: 16 });
-        if (fallback.isEmpty()) throw new Error("Empty fallback tray image");
-        this.tray = new Tray(fallback);
-      } catch {
-        console.error("[TrayManager] Could not create tray at all");
-        return;
-      }
+    const img = loadTrayIcon(["ClaudeIcon-Square.png", "app.png"]);
+    if (!img) {
+      console.error("[TrayManager] Could not load any tray icon");
+      return;
     }
+    this.tray = new Tray(img);
 
     // Create context menu
     const contextMenu = Menu.buildFromTemplate([
@@ -106,32 +114,12 @@ export class TrayManager {
       iconName = "tray-medium.png"; // 50-75% amber
     }
 
-    const iconPath = isDev
-      ? path.join(process.cwd(), "assets", "icons", iconName)
-      : path.join(process.resourcesPath, "assets", "icons", iconName);
-
-    try {
-      const img = nativeImage
-        .createFromPath(iconPath)
-        .resize({ width: 16, height: 16 });
-      if (!img.isEmpty()) {
-        this.tray.setImage(img);
-      } else {
-        const fallback = nativeImage
-          .createFromPath(
-            isDev
-              ? path.join(process.cwd(), "assets", "icons", "ClaudeIcon-Square.png")
-              : path.join(process.resourcesPath, "assets", "icons", "ClaudeIcon-Square.png"),
-          )
-          .resize({ width: 16, height: 16 });
-        if (!fallback.isEmpty()) this.tray.setImage(fallback);
-      }
-    } catch (error) {
-      console.warn("[TrayManager] Failed to update icon:", error);
-    }
+    const img = loadTrayIcon([iconName, "ClaudeIcon-Square.png"]);
+    if (img) this.tray.setImage(img);
 
     // Update tooltip with current usage
-    const providerLabel = usageData.provider === "chatgpt" ? "ChatGPT" : "Claude";
+    const providerLabel =
+      usageData.provider === "chatgpt" ? "ChatGPT" : "Claude";
     const tooltip = `${providerLabel} Usage\n${usageData.currentUsage}/${usageData.planLimit} (${usageData.percentageUsed.toFixed(1)}%)`;
     this.tray.setToolTip(tooltip);
   }
@@ -169,7 +157,7 @@ export class TrayManager {
     }
 
     if (this.mainWindow) {
-      this.mainWindow.webContents.send("action:refreshNow");
+      this.mainWindow.webContents.send(IPC_ON_CHANNELS.ACTION_REFRESH_NOW);
     }
   }
 
@@ -178,7 +166,7 @@ export class TrayManager {
    */
   private openSettings(): void {
     if (this.mainWindow) {
-      this.mainWindow.webContents.send("action:openSettings");
+      this.mainWindow.webContents.send(IPC_ON_CHANNELS.ACTION_OPEN_SETTINGS);
     }
   }
 

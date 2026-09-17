@@ -65,7 +65,10 @@ function getSecureWebPrefs(): Electron.WebPreferences {
   };
 }
 
-function isKnownSessionCookieName(provider: ProviderType, name: string): boolean {
+function isKnownSessionCookieName(
+  provider: ProviderType,
+  name: string,
+): boolean {
   return getSessionCookieKeys(provider).includes(name);
 }
 
@@ -73,7 +76,9 @@ function getValidSessionCookie(
   provider: ProviderType,
   cookies: Electron.Cookie[],
 ): Electron.Cookie | undefined {
-  return cookies.find((cookie) => isKnownSessionCookieName(provider, cookie.name));
+  return cookies.find((cookie) =>
+    isKnownSessionCookieName(provider, cookie.name),
+  );
 }
 
 export interface LoginResult {
@@ -141,19 +146,19 @@ export async function openLoginWindow(
       });
       const sessionCookie = getValidSessionCookie(provider, cookies);
       if (!sessionCookie) {
-        console.log(
-          `[LoginWindow:${provider}] Waiting for valid auth cookie. Seen:`,
-          cookies.map((c) => c.name).join(", ") || "(none)",
-        );
+        if (isDev) {
+          console.log(
+            `[LoginWindow:${provider}] Waiting for valid auth cookie. Seen:`,
+            cookies.map((c) => c.name).join(", ") || "(none)",
+          );
+        }
         return;
       }
 
       finalizing = true;
       const cookieValue = `${sessionCookie.name}=${sessionCookie.value}`;
-      console.log(
-        `[LoginWindow:${provider}] Session cookie captured:`,
-        sessionCookie.name,
-      );
+      if (isDev)
+        console.log(`[LoginWindow:${provider}] Session cookie captured`);
 
       resolved = true;
       clearInterval(cookiePoller);
@@ -165,7 +170,10 @@ export async function openLoginWindow(
       try {
         saveSession(cookieValue, provider);
       } catch (error) {
-        console.error(`[LoginWindow:${provider}] Failed to save session:`, error);
+        console.error(
+          `[LoginWindow:${provider}] Failed to save session:`,
+          error,
+        );
       }
 
       loginWindow.close();

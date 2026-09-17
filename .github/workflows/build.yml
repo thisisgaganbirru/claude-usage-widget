@@ -1,19 +1,19 @@
-name: Quality
+name: Build
 
 on:
   pull_request:
     branches: [main, dev]
-  push:
-    branches: [main, dev]
   workflow_dispatch:
 
 jobs:
-  quality:
-    runs-on: ubuntu-latest
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: read
-    env:
-      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -24,8 +24,5 @@ jobs:
 
       - run: npm ci
 
-      - name: Lint, type-check, format check
-        run: npm run lint
-
-      - name: Unit tests
-        run: npm test
+      - name: Package (no installer, no signing)
+        run: npm run package

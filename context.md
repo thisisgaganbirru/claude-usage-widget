@@ -15,7 +15,6 @@
 `src/main/` — Electron main process
 - `index.ts` — App lifecycle, window creation, IPC setup (resize, pin, mouse passthrough, keepInTray)
 - `tray.ts` — System tray with 4 usage-level icons + context menu
-- `browser-preference.ts` — Browser preference helper (IPC-exposed)
 - `auth/login-window.ts` — Embedded BrowserWindow login flow (cookie capture)
 - `auth/session-manager.ts` — Encrypted session storage (per-install UUID, 30-day TTL)
 - `data/usage-fetcher.ts` — Claude.ai API fetch via electron.net + multi-format parsing
@@ -37,7 +36,7 @@
 - `components/widget/WidgetMenu.tsx` — Dropdown: size switch, sign out, sign out everywhere, remove
 - `components/widget/AlertBanner.tsx` — Blinking threshold alert banner
 - `components/widget/Footer.tsx` — Last-updated timestamp + refresh button
-- `components/settings/SettingsPanel.tsx` — Settings (800×600), 4 tabs: General, Alerts, Appearance, About
+- `components/settings/SettingsPanel.tsx` — Settings (800×600), 3 tabs: General, Notifications, Appearance
 
 `src/preload/preload.js` — Channel-allowlisted contextBridge IPC bridge
 `src/shared/ipc-channels.ts` — All IPC channel name constants (source of truth)
@@ -49,7 +48,8 @@
 - **Install:** `npm ci` (preferred — respects lock file exactly)
 - **Dev/Start:** `npm run start` (runs `electron-forge start`)
 - **Type-Check:** `npm run typecheck` (runs `tsc --noEmit`)
-- **Lint:** `npm run lint` (runs `npm run typecheck && node scripts/lint-guards.mjs`)
+- **Lint:** `npm run lint` (typecheck, ESLint, lint guards, Prettier check)
+- **Test:** `npm test` (Vitest)
 - **Check:** `npm run check` (alias for `npm run lint`)
 - **Build:** `npm run make` (production installer → `out/make/`)
 
@@ -90,7 +90,8 @@
 | `pollingInterval` | `60` | seconds, clamped 30–300 |
 | `notificationThresholds` | `[50,75,90,95]` | session alert % levels |
 | `weeklyNotificationThresholds` | `[50,75,90,100]` | weekly alert % levels |
-| `enableNotifications` | `true` | desktop + in-widget alerts |
+| `enableDesktopNotifications` | `true` | OS notifications |
+| `enableBannerNotifications` | `true` | in-widget banner |
 | `startOnBoot` | `false` | production only; uses `app.setLoginItemSettings` |
 | `keepInTray` | `true` | hide to tray on close instead of quitting |
 | `quickEntryShortcut` | `"Control+Alt+Space"` | global shortcut to show widget |
@@ -119,5 +120,6 @@ Transparent areas pass mouse events through via `setIgnoreMouseEvents(true, { fo
 | 90–100% | `tray-critical.png` |
 
 ## 7. CI
-- `quality.yml` — Runs `npm run lint` on push/PR to `main` and `dev` (windows-latest runner)
+- `quality.yml` — Runs `npm run lint` and `npm test` on push/PR to `main` and `dev` (ubuntu)
+- `build.yml` — Packages on windows/macos/ubuntu for PRs to `main` and `dev`
 - `release.yml` — Gates releases to main-branch tags only
