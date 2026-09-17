@@ -24,4 +24,7 @@ Thumbs.db
 .env.local
 
 # Local docs/context files (not for repo commits)
-docs/
+docs/*
+# The ADRs are the exception: CONTRIBUTING.md and SECURITY.md link to them,
+# so a clone that does not have them has broken links.
+!docs/adr/
