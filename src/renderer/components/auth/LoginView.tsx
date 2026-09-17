@@ -10,6 +10,13 @@ type LoginStep = "idle" | "opening" | "waiting" | "verifying";
 interface LoginViewProps {
   selectedProvider: ProviderType;
   onProviderChange: (provider: ProviderType) => void;
+  /**
+   * Back to the widget. Signing in is no longer a gate the app opens behind,
+   * so there has to be a way out that is not quitting: most providers need no
+   * sign-in at all, and a user who opened this by mistake still has readings
+   * waiting for them.
+   */
+  onClose?: () => void;
 }
 
 interface ProviderOption {
@@ -68,6 +75,7 @@ function getStepMessage(step: LoginStep, providerLabel: string): string {
 export function LoginView({
   selectedProvider,
   onProviderChange,
+  onClose,
 }: LoginViewProps): React.ReactElement {
   const { loadAccounts, setAuthenticated } = useAuthStore();
   const [isLoading, setIsLoading] = useState(false);
@@ -171,47 +179,56 @@ export function LoginView({
   return (
     <div
       data-widget-card
-      className="relative flex h-[600px] w-[800px] overflow-hidden bg-[#101113] font-['Segoe_UI',_Roboto,_sans-serif] text-white"
+      className="relative flex h-[600px] w-[800px] overflow-hidden bg-sunken font-['Segoe_UI',_Roboto,_sans-serif] text-fg"
     >
       <div className="absolute right-4 top-3 z-10 flex gap-1.5">
+        {onClose ? (
+          <button
+            onClick={onClose}
+            title="Back to the widget"
+            className="flex h-8 items-center justify-center rounded-md px-3 text-[12px] text-fg/45 transition-colors hover:bg-fg/10 hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7aa2ff]"
+          >
+            Back
+          </button>
+        ) : null}
         <button
           onClick={() => void tryBridge()?.app.minimize()}
           title="Minimize"
-          className="flex h-8 w-8 items-center justify-center rounded-md text-white/45 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7aa2ff]"
+          className="flex h-8 w-8 items-center justify-center rounded-md text-fg/45 transition-colors hover:bg-fg/10 hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7aa2ff]"
         >
           -
         </button>
         <button
           onClick={() => void tryBridge()?.app.quit()}
           title="Quit"
-          className="flex h-8 w-8 items-center justify-center rounded-md text-white/45 transition-colors hover:bg-red-500/15 hover:text-red-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7aa2ff]"
+          className="flex h-8 w-8 items-center justify-center rounded-md text-fg/45 transition-colors hover:bg-red-500/15 hover:text-red-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7aa2ff]"
         >
           x
         </button>
       </div>
 
-      <section className="flex w-[328px] shrink-0 flex-col border-r border-white/10 bg-[#15171a] px-8 py-8">
+      <section className="flex w-[328px] shrink-0 flex-col border-r border-fg/10 bg-surface px-8 py-8">
         <div className="mb-8 flex items-center gap-3">
           <img
             src={claudeIcon}
-            className="h-10 w-10 shrink-0 rounded-xl border border-white/10 bg-white/5"
+            className="h-10 w-10 shrink-0 rounded-xl border border-fg/10 bg-fg/5"
             alt=""
           />
           <div>
             <div className="text-sm font-semibold leading-tight">
               Usage Widget
             </div>
-            <div className="mt-1 text-xs text-white/45">
+            <div className="mt-1 text-xs text-fg/45">
               Desktop session monitor
             </div>
           </div>
         </div>
 
         <div className="mb-5">
-          <h1 className="text-[28px] font-semibold leading-[1.12] text-white">
+          <h1 className="text-[28px] font-semibold leading-[1.12] text-fg">
             Connect a provider
           </h1>
-          <p className="mt-3 text-sm leading-6 text-white/55">
+          <p className="mt-3 text-sm leading-6 text-fg/55">
             Choose the account you want to monitor. Sessions stay local and can
             be cleared from settings.
           </p>
@@ -227,23 +244,21 @@ export function LoginView({
                 disabled={isLoading}
                 className={`group rounded-xl border p-4 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7aa2ff] disabled:cursor-not-allowed disabled:opacity-60 ${
                   active
-                    ? "border-[#7aa2ff]/45 bg-[#1b2230]"
-                    : "border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.06]"
+                    ? "border-[#7aa2ff]/45 bg-[#7aa2ff]/10"
+                    : "border-fg/10 bg-fg/[0.03] hover:border-fg/20 hover:bg-fg/[0.06]"
                 }`}
               >
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-semibold text-white">
+                  <span className="text-sm font-semibold text-fg">
                     {option.label}
                   </span>
                   <span
                     className={`h-2.5 w-2.5 rounded-full ${
-                      active
-                        ? "bg-[#7aa2ff]"
-                        : "bg-white/20 group-hover:bg-white/35"
+                      active ? "bg-[#7aa2ff]" : "bg-fg/20 group-hover:bg-fg/35"
                     }`}
                   />
                 </div>
-                <p className="mt-2 text-xs leading-5 text-white/48">
+                <p className="mt-2 text-xs leading-5 text-fg/48">
                   {option.description}
                 </p>
               </button>
@@ -251,21 +266,21 @@ export function LoginView({
           })}
         </div>
 
-        <div className="rounded-lg border border-white/10 bg-black/15 px-3 py-2.5 text-[11px] leading-5 text-white/45">
+        <div className="rounded-lg border border-fg/10 bg-black/15 px-3 py-2.5 text-[11px] leading-5 text-fg/45">
           Encrypted local token storage. No passwords are stored by this app.
         </div>
       </section>
 
       <section className="flex min-w-0 flex-1 flex-col justify-center px-12 py-12">
         <div className="max-w-[360px]">
-          <div className="mb-4 inline-flex rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-medium text-white/55">
+          <div className="mb-4 inline-flex rounded-full border border-fg/10 bg-fg/[0.04] px-3 py-1 text-xs font-medium text-fg/55">
             {providerLabel} selected
           </div>
 
-          <h2 className="text-[32px] font-semibold leading-[1.12] text-white">
+          <h2 className="text-[32px] font-semibold leading-[1.12] text-fg">
             Sign in to continue
           </h2>
-          <p className="mt-3 text-sm leading-6 text-white/52">
+          <p className="mt-3 text-sm leading-6 text-fg/52">
             We will open the official {providerLabel} login window, verify the
             session locally, and return you to the widget.
           </p>
@@ -286,7 +301,7 @@ export function LoginView({
           <button
             onClick={handleLogin}
             disabled={isLoading}
-            className="mt-6 flex h-12 w-full items-center justify-center rounded-xl bg-[#e0e6ef] px-4 text-sm font-semibold text-[#111316] transition-colors hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7aa2ff] disabled:cursor-not-allowed disabled:bg-white/25 disabled:text-white/55"
+            className="mt-6 flex h-12 w-full items-center justify-center rounded-xl bg-fg/90 px-4 text-sm font-semibold text-surface transition-colors hover:bg-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7aa2ff] disabled:cursor-not-allowed disabled:bg-fg/25 disabled:text-surface/70"
           >
             {isLoading ? (
               <span className="flex items-center justify-center gap-3">
@@ -302,26 +317,26 @@ export function LoginView({
             <button
               onClick={openProviderAuth}
               disabled={isLoading}
-              className="h-9 rounded-lg border border-white/10 bg-white/[0.04] text-xs font-medium text-white/60 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7aa2ff] disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-9 rounded-lg border border-fg/10 bg-fg/[0.04] text-xs font-medium text-fg/60 transition-colors hover:bg-fg/[0.08] hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7aa2ff] disabled:cursor-not-allowed disabled:opacity-50"
             >
               Open in browser
             </button>
             <button
               onClick={() => void copyDiagnostics()}
-              className="h-9 rounded-lg border border-white/10 bg-white/[0.04] text-xs font-medium text-white/60 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7aa2ff]"
+              className="h-9 rounded-lg border border-fg/10 bg-fg/[0.04] text-xs font-medium text-fg/60 transition-colors hover:bg-fg/[0.08] hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7aa2ff]"
             >
               {diagCopied ? "Diagnostics copied" : "Copy diagnostics"}
             </button>
           </div>
 
-          <div className="mt-8 border-t border-white/10 pt-5">
+          <div className="mt-8 border-t border-fg/10 pt-5">
             <div className="grid grid-cols-3 gap-3 text-center">
               {["Local only", "Encrypted", "Official sign-in"].map((label) => (
                 <div
                   key={label}
-                  className="rounded-lg border border-white/10 bg-white/[0.03] px-2 py-3"
+                  className="rounded-lg border border-fg/10 bg-fg/[0.03] px-2 py-3"
                 >
-                  <div className="text-[11px] font-semibold text-white/70">
+                  <div className="text-[11px] font-semibold text-fg/70">
                     {label}
                   </div>
                 </div>

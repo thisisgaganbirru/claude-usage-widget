@@ -71,22 +71,6 @@ export function formatCountdown(
   )}:${pad(totalSeconds % 60)}`;
 }
 
-/** "Tue, Mar 4, 09:00" in the user's own locale settings. */
-export function formatResetDate(
-  isoDate: string | null | undefined,
-): string | null {
-  if (!isoDate) return null;
-  const parsed = Date.parse(isoDate);
-  if (Number.isNaN(parsed)) return null;
-  return new Date(parsed).toLocaleString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 export function formatPercent(value: number): string {
   return `${Math.round(value)}%`;
 }

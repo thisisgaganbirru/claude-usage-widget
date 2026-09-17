@@ -93,19 +93,19 @@ export function UsageWindowRow({
   return (
     <div className={compact ? "mb-1.5" : "mb-2.5"}>
       <div className="mb-1 flex items-center justify-between">
-        <span className="text-xs font-semibold text-white">{window.label}</span>
-        <span className="text-[11px] font-medium tabular-nums text-white/50">
+        <span className="text-xs font-semibold text-fg">{window.label}</span>
+        <span className="text-[11px] font-medium tabular-nums text-fg/50">
           {formatPercent(window.usedPercent)} used
         </span>
       </div>
 
-      <div className="mb-1.5 text-[10px] text-white/30">
+      <div className="mb-1.5 text-[10px] text-fg/30">
         {resetsIn === null ? "No reset time reported" : `Resets in ${resetsIn}`}
       </div>
 
       <ProgressBar
         percent={window.usedPercent}
-        trackClass="fill-white/10"
+        trackClass="fill-fg/10"
         fillClass={fillClassFor(window.usedPercent)}
         height={compact ? 6 : BAR_HEIGHT}
       />
@@ -123,20 +123,20 @@ export function ModelWindowList({
 
   return (
     <div className="mt-1.5">
-      <div className="mb-1 text-[10px] uppercase tracking-wide text-white/30">
+      <div className="mb-1 text-[10px] uppercase tracking-wide text-fg/30">
         By model
       </div>
       {windows.map((window) => (
         <div key={window.id} className="mb-1.5">
           <div className="mb-0.5 flex items-center justify-between">
-            <span className="text-[11px] text-white/70">{window.label}</span>
-            <span className="text-[10px] tabular-nums text-white/40">
+            <span className="text-[11px] text-fg/70">{window.label}</span>
+            <span className="text-[10px] tabular-nums text-fg/40">
               {formatPercent(window.usedPercent)}
             </span>
           </div>
           <ProgressBar
             percent={window.usedPercent}
-            trackClass="fill-white/10"
+            trackClass="fill-fg/10"
             fillClass={fillClassFor(window.usedPercent)}
             height={4}
           />
@@ -153,8 +153,11 @@ export function ModelWindowList({
  */
 export function ProviderStatus({
   state,
+  inline = false,
 }: {
   state: ProviderState;
+  /** Renders the phrase alone, for a caller that supplies its own layout. */
+  inline?: boolean;
 }): React.ReactElement {
   const message = ((): string => {
     switch (state.kind) {
@@ -178,8 +181,10 @@ export function ProviderStatus({
     }
   })();
 
+  if (inline) return <>{message}</>;
+
   return (
-    <div className="px-3.5 py-4 text-center text-[11px] text-white/40">
+    <div className="px-3.5 py-4 text-center text-[11px] text-fg/40">
       {message}
     </div>
   );

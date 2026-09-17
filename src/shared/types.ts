@@ -14,6 +14,20 @@ import type { ProviderId } from "./usage";
  */
 export type ProviderType = Extract<ProviderId, "claude" | "chatgpt">;
 
+const LOGIN_PROVIDERS: readonly ProviderId[] = ["claude", "chatgpt"];
+
+/**
+ * Whether this provider has a sign-in flow at all.
+ *
+ * The UI needs this to decide what to offer a provider that is reporting
+ * nothing. Offering "sign in" for Codex or Cursor would be a dead end: those
+ * read a file another tool wrote, so the fix is to use that tool, not to log
+ * in here.
+ */
+export function hasLoginFlow(id: ProviderId): id is ProviderType {
+  return LOGIN_PROVIDERS.includes(id);
+}
+
 export interface ProviderAccount {
   id: string;
   provider: ProviderType;

@@ -1,29 +1,19 @@
+/**
+ * The widget's bottom line: refresh everything, and the version.
+ *
+ * It used to carry one provider's account label and a link to that vendor's
+ * settings page, which only made sense while the widget showed one provider
+ * at a time. Those moved onto the cards; what is left here is genuinely
+ * app-level.
+ */
 import React, { useEffect, useState } from "react";
-import { ProviderType } from "@shared/types";
-import { formatAgo } from "@renderer/format";
+import { useProviderStore } from "@renderer/store/provider-store";
 import { tryBridge } from "@renderer/ipc/bridge";
 
-interface FooterProps {
-  provider: ProviderType;
-  /** ISO 8601 from the provider's last successful read, or null. */
-  fetchedAt: string | null;
-  label?: string | null;
-  onRefresh?: () => void;
-  borderTopClass?: string;
-  paddingClass?: string;
-  labelGapClass?: string;
-}
-
-export function Footer({
-  provider,
-  fetchedAt,
-  label,
-  onRefresh,
-  borderTopClass = "border-t border-white/5",
-  paddingClass = "px-3.5 pb-3 pt-2",
-  labelGapClass = "mb-1",
-}: FooterProps): React.ReactElement {
+export function Footer(): React.ReactElement {
   const [version, setVersion] = useState("...");
+  const refresh = useProviderStore((store) => store.refresh);
+
   useEffect(() => {
     tryBridge()
       ?.app.getVersion()
@@ -32,58 +22,16 @@ export function Footer({
       })
       .catch(() => {});
   }, []);
-  const refreshBtn = (
-    <span
-      onClick={onRefresh}
-      title="Refresh now"
-      className="cursor-pointer text-white/40"
-    >
-      ↻
-    </span>
-  );
-
-  const settingsUrl =
-    provider === "chatgpt"
-      ? "https://chatgpt.com/"
-      : "https://claude.ai/settings/general";
-  const settingsLabel =
-    provider === "chatgpt" ? "Open ChatGPT" : "Open Claude settings";
 
   return (
-    <div className={`${borderTopClass} ${paddingClass}`}>
-      {/* Row 1: username + external link */}
-      {label && (
-        <div className={`mb-1 flex items-center gap-1.5 ${labelGapClass}`}>
-          <span className="text-[10px] font-medium text-white/45">{label}</span>
-          <span
-            title={settingsLabel}
-            onClick={() => void tryBridge()?.app.openExternal(settingsUrl)}
-            className="inline-flex cursor-pointer leading-none"
-          >
-            <svg
-              width="10"
-              height="10"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="rgba(255,255,255,0.25)"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-              <polyline points="15 3 21 3 21 9" />
-              <line x1="10" y1="14" x2="21" y2="3" />
-            </svg>
-          </span>
-        </div>
-      )}
-      {/* Row 2: last updated (left) + version (right) */}
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] text-white/25">
-          Last updated: {formatAgo(fetchedAt) ?? "never"} {refreshBtn}
-        </span>
-        <span className="text-[10px] text-white/15">v{version}</span>
-      </div>
+    <div className="flex items-center justify-between border-t border-fg/5 px-3.5 pb-2.5 pt-2">
+      <button
+        onClick={() => void refresh()}
+        className="text-[10px] text-fg/30 transition-colors hover:text-fg/60"
+      >
+        ↻ Refresh all
+      </button>
+      <span className="text-[10px] text-fg/15">v{version}</span>
     </div>
   );
 }

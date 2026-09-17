@@ -1,44 +1,45 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useAuthStore } from "@renderer/store/auth-store";
 import { LoginView } from "@renderer/components/auth/LoginView";
-import { MiniView } from "@renderer/components/widget/MiniView";
-import { CompactView } from "@renderer/components/widget/CompactView";
-import { ExpandedView } from "@renderer/components/widget/ExpandedView";
+import { WidgetView } from "@renderer/components/widget/WidgetView";
 import { SettingsPanel } from "@renderer/components/settings/SettingsPanel";
 import { SizeOption } from "@renderer/components/widget/WidgetHeader";
 import { useProviderSubscription } from "@renderer/hooks/useProviderState";
+import { useProviderList } from "@renderer/hooks/useProviderList";
+import { useTheme } from "@renderer/hooks/useTheme";
 import {
+  hasLoginFlow,
   ProviderType,
   SettingsPatch,
   ThresholdCrossedEvent,
   WidgetSettings,
 } from "@shared/types";
 import { providerLabel } from "@shared/provider-labels";
+import type { ProviderId } from "@shared/usage";
 import { tryBridge } from "@renderer/ipc/bridge";
+import {
+  SETTINGS_WINDOW_SIZE,
+  WIDGET_WIDTH,
+  widgetHeight,
+} from "@renderer/layout";
 
 const isDev = process.env.NODE_ENV === "development";
-
-const WINDOW_SIZES: Record<SizeOption, [number, number]> = {
-  Small: [350, 80],
-  Medium: [350, 345],
-  Large: [350, 650],
-};
-const SETTINGS_WINDOW_SIZE: [number, number] = [800, 600];
 
 export const App = () => {
   const {
     selectedProvider,
     setSelectedProvider,
-    isAuthenticated,
     setAuthenticated,
     checkSession,
     loadAccounts,
   } = useAuthStore();
   // One subscription for the whole app; every view reads the store it fills.
   useProviderSubscription();
+  const { providerIds } = useProviderList();
   const [selectedSize, setSelectedSize] = useState<SizeOption>("Small");
   const [isPinned, setIsPinned] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [signingIn, setSigningIn] = useState<ProviderType | null>(null);
   const [settings, setSettings] = useState<WidgetSettings | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [isSettingsSaving, setIsSettingsSaving] = useState(false);
@@ -53,28 +54,37 @@ export const App = () => {
   const [didShowAlertPreview, setDidShowAlertPreview] = useState(false);
   const alertTimerRef = useRef<number | null>(null);
 
-  const clearAlertTimer = () => {
+  useTheme(settings?.theme ?? "auto");
+
+  // These three are memoised because the effects below list them as
+  // dependencies. Redefining them each render would re-subscribe every IPC
+  // listener on every state change, which is how the threshold alert used to
+  // fire twice for one crossing.
+  const clearAlertTimer = useCallback(() => {
     if (alertTimerRef.current !== null) {
       window.clearTimeout(alertTimerRef.current);
       alertTimerRef.current = null;
     }
-  };
+  }, []);
 
-  const startAlertTimer = () => {
+  const startAlertTimer = useCallback(() => {
     clearAlertTimer();
     alertTimerRef.current = window.setTimeout(() => {
       setThresholdAlertVisible(false);
       setAlertHiddenMode("timeout");
     }, 120000);
-  };
+  }, [clearAlertTimer]);
 
-  const showAlertForEvent = (message: string) => {
-    setThresholdAlertMessage(message);
-    setThresholdAlertActive(true);
-    setThresholdAlertVisible(true);
-    setAlertHiddenMode("none");
-    startAlertTimer();
-  };
+  const showAlertForEvent = useCallback(
+    (message: string) => {
+      setThresholdAlertMessage(message);
+      setThresholdAlertActive(true);
+      setThresholdAlertVisible(true);
+      setAlertHiddenMode("none");
+      startAlertTimer();
+    },
+    [startAlertTimer],
+  );
 
   const loadSettings = async () => {
     try {
@@ -114,8 +124,19 @@ export const App = () => {
     }
   };
 
+  /**
+   * Only providers with a sign-in flow can be signed in to. The rest read a
+   * credential another tool wrote, so there is nothing to open here.
+   */
+  const handleSignIn = (providerId: ProviderId) => {
+    if (!hasLoginFlow(providerId)) return;
+    setSelectedProvider(providerId);
+    setSigningIn(providerId);
+  };
+
   const handleProviderChange = async (provider: ProviderType) => {
     setSelectedProvider(provider);
+    setSigningIn(provider);
     const authed = await checkSession(provider);
     if (authed) void tryBridge()?.providers.refresh(provider);
   };
@@ -171,28 +192,21 @@ export const App = () => {
   useEffect(() => {
     const bridge = tryBridge();
     if (!bridge) return;
-    const [width, height] = !isAuthenticated
-      ? SETTINGS_WINDOW_SIZE
-      : isSettingsOpen
+    const [width, height] =
+      isSettingsOpen || signingIn !== null
         ? SETTINGS_WINDOW_SIZE
-        : WINDOW_SIZES[selectedSize];
+        : [WIDGET_WIDTH, widgetHeight(selectedSize, providerIds.length)];
     void bridge.window.resize(width, height).catch((error) => {
       console.error("[App] Failed to resize window:", error);
     });
-  }, [selectedSize, isAuthenticated, isSettingsOpen]);
+  }, [selectedSize, isSettingsOpen, signingIn, providerIds.length]);
 
   useEffect(() => {
     const bridge = tryBridge();
+    void loadSettings();
     void loadAccounts("claude");
     void loadAccounts("chatgpt");
-    void Promise.all([checkSession("claude"), checkSession("chatgpt")]).then(
-      ([claudeAuthed, chatgptAuthed]) => {
-        if (!claudeAuthed && !chatgptAuthed) return;
-        const provider = claudeAuthed ? "claude" : "chatgpt";
-        setSelectedProvider(provider);
-        void bridge?.providers.refresh(provider);
-      },
-    );
+    void Promise.all([checkSession("claude"), checkSession("chatgpt")]);
 
     if (!bridge) return;
 
@@ -203,9 +217,12 @@ export const App = () => {
       })
       .catch(() => {});
 
-    const handleLoginSuccess = () => setAuthenticated(true);
+    const handleLoginSuccess = () => {
+      setAuthenticated(true);
+      setSigningIn(null);
+    };
     const handleRefreshNow = () => {
-      void bridge.providers.refresh(selectedProvider);
+      void bridge.providers.refresh();
     };
     const handleOpenSettings = async () => {
       setIsSettingsOpen(true);
@@ -230,25 +247,19 @@ export const App = () => {
     return () => {
       for (const unsubscribe of unsubscribes) unsubscribe();
     };
-  }, [
-    checkSession,
-    loadAccounts,
-    selectedProvider,
-    setAuthenticated,
-    setSelectedProvider,
-  ]);
+  }, [checkSession, loadAccounts, setAuthenticated, showAlertForEvent]);
 
   useEffect(() => {
-    if (!isDev || !isAuthenticated || didShowAlertPreview) return;
+    if (!isDev || didShowAlertPreview) return;
 
     setDidShowAlertPreview(true);
     showAlertForEvent("Claude 7d weekly is at 75% (alert set at 75%).");
     return () => clearAlertTimer();
-  }, [didShowAlertPreview, isAuthenticated]);
+  }, [didShowAlertPreview, showAlertForEvent, clearAlertTimer]);
 
   useEffect(() => {
     return () => clearAlertTimer();
-  }, []);
+  }, [clearAlertTimer]);
 
   const handleAlertIgnore = () => {
     setThresholdAlertVisible(false);
@@ -276,11 +287,12 @@ export const App = () => {
     ? thresholdAlertMessage
     : null;
 
-  if (!isAuthenticated) {
+  if (signingIn !== null) {
     return (
       <LoginView
-        selectedProvider={selectedProvider}
-        onProviderChange={handleProviderChange}
+        selectedProvider={signingIn}
+        onProviderChange={(provider) => void handleProviderChange(provider)}
+        onClose={() => setSigningIn(null)}
       />
     );
   }
@@ -289,9 +301,9 @@ export const App = () => {
     return (
       <div
         data-widget-card
-        className="flex h-full w-full items-center justify-center bg-[#0f0f11]"
+        className="flex h-full w-full items-center justify-center bg-sunken"
       >
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/15 border-t-[#C15F3C]" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-fg/15 border-t-[#C15F3C]" />
       </div>
     );
   }
@@ -310,52 +322,13 @@ export const App = () => {
     );
   }
 
-  if (selectedSize === "Medium") {
-    return (
-      <CompactView
-        provider={selectedProvider}
-        onProviderChange={handleProviderChange}
-        selectedSize={selectedSize}
-        onSizeChange={setSelectedSize}
-        isPinned={isPinned}
-        onTogglePin={handleTogglePin}
-        onLogout={handleLogout}
-        onHardLogout={handleHardLogout}
-        onRemove={handleRemove}
-        alertMessage={activeAlertMessage}
-        onAlertIgnore={handleAlertIgnore}
-        onAlertHoverStart={handleAlertHoverStart}
-        onAlertHoverEnd={handleAlertHoverEnd}
-      />
-    );
-  }
-  if (selectedSize === "Large") {
-    return (
-      <ExpandedView
-        provider={selectedProvider}
-        onProviderChange={handleProviderChange}
-        selectedSize={selectedSize}
-        onSizeChange={setSelectedSize}
-        isPinned={isPinned}
-        onTogglePin={handleTogglePin}
-        onLogout={handleLogout}
-        onHardLogout={handleHardLogout}
-        onRemove={handleRemove}
-        alertMessage={activeAlertMessage}
-        onAlertIgnore={handleAlertIgnore}
-        onAlertHoverStart={handleAlertHoverStart}
-        onAlertHoverEnd={handleAlertHoverEnd}
-      />
-    );
-  }
   return (
-    <MiniView
-      provider={selectedProvider}
-      onProviderChange={handleProviderChange}
+    <WidgetView
       selectedSize={selectedSize}
       onSizeChange={setSelectedSize}
       isPinned={isPinned}
       onTogglePin={handleTogglePin}
+      onSignIn={handleSignIn}
       onLogout={handleLogout}
       onHardLogout={handleHardLogout}
       onRemove={handleRemove}
