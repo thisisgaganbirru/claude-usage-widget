@@ -22,6 +22,11 @@ const DEFAULT_TIMEOUT_MS = 20000;
  * `Retry-After` is either a delay in seconds or an HTTP date. Both forms
  * become seconds from now; anything else yields null and the scheduler falls
  * back to its own rate-limit delay.
+ *
+ * A zero or past-dated delay yields null too, rather than "retry now". The
+ * claude.ai OAuth usage endpoint has been observed answering `Retry-After: 0`
+ * while continuing to refuse the request, and taking that literally turns a
+ * rate limit into a request loop against a vendor that is already saying no.
  */
 export function parseRetryAfter(
   value: string | undefined,
@@ -33,12 +38,14 @@ export function parseRetryAfter(
 
   if (/^\d+$/.test(trimmed)) {
     const seconds = Number(trimmed);
-    return Number.isFinite(seconds) ? Math.max(0, seconds) : null;
+    if (!Number.isFinite(seconds) || seconds <= 0) return null;
+    return seconds;
   }
 
   const asDate = Date.parse(trimmed);
   if (Number.isNaN(asDate)) return null;
-  return Math.max(0, Math.round((asDate - now) / 1000));
+  const seconds = Math.round((asDate - now) / 1000);
+  return seconds > 0 ? seconds : null;
 }
 
 function headerValue(
