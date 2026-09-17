@@ -1,26 +1,91 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { WidgetSettings } from "@shared/types";
+import { providerLabel } from "@shared/provider-labels";
+import { PROVIDER_IDS, type ProviderId } from "@shared/usage";
+import type {
+  ProviderSettings,
+  SettingsPatch,
+  WidgetSettings,
+} from "@shared/types";
 
 interface SettingsPanelProps {
   settings: WidgetSettings;
   isSaving: boolean;
   error: string | null;
   onClose: () => void;
-  onSave: (next: WidgetSettings) => Promise<void>;
+  onSave: (patch: SettingsPatch) => Promise<void>;
   onLogout: () => Promise<void>;
   onQuit: () => void;
 }
 
-type SettingsTab = "general" | "notifications" | "appearance";
+type SettingsTab = "general" | "providers" | "notifications" | "appearance";
 
 const TAB_ORDER: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
+  { id: "providers", label: "Providers" },
   { id: "notifications", label: "Notifications" },
   { id: "appearance", label: "Appearance" },
 ];
 
-const SESSION_THRESHOLDS = [50, 75, 90, 95];
-const WEEKLY_THRESHOLDS = [50, 75, 90, 100];
+/** Mirrors POLLING_INTERVAL_{MIN,MAX}_SEC; main clamps whatever arrives. */
+const INTERVAL_MIN_SEC = 30;
+const INTERVAL_MAX_SEC = 300;
+
+const THRESHOLD_CHOICES = [50, 75, 90, 95, 100];
+
+/** The flat, non-provider settings this panel edits. */
+const SCALAR_KEYS = [
+  "enableDesktopNotifications",
+  "enableBannerNotifications",
+  "startOnBoot",
+  "keepInTray",
+  "quickEntryShortcut",
+  "theme",
+] as const;
+
+function sameNumbers(left: number[], right: number[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+}
+
+/**
+ * Only what the user actually changed.
+ *
+ * The panel could send its whole draft, but it read that draft when the window
+ * opened: anything a widget card wrote in the meantime would be reverted by
+ * fields the user never touched. A diff means an untouched field is not a
+ * write at all.
+ */
+export function diffSettings(
+  base: WidgetSettings,
+  draft: WidgetSettings,
+): SettingsPatch {
+  const patch: SettingsPatch = {};
+
+  for (const key of SCALAR_KEYS) {
+    if (draft[key] !== base[key]) {
+      // Each key's value type matches its own slot; the loop erases that.
+      Object.assign(patch, { [key]: draft[key] });
+    }
+  }
+
+  const providers: NonNullable<SettingsPatch["providers"]> = {};
+  for (const id of PROVIDER_IDS) {
+    const from = base.providers[id];
+    const to = draft.providers[id];
+    const block: Partial<ProviderSettings> = {};
+    if (to.enabled !== from.enabled) block.enabled = to.enabled;
+    if (to.intervalSec !== from.intervalSec) block.intervalSec = to.intervalSec;
+    if (!sameNumbers(to.thresholds, from.thresholds)) {
+      block.thresholds = to.thresholds;
+    }
+    if (Object.keys(block).length > 0) providers[id] = block;
+  }
+  if (Object.keys(providers).length > 0) patch.providers = providers;
+
+  return patch;
+}
 
 function Toggle({
   checked,
@@ -95,6 +160,98 @@ function ShortcutRecorder({
   );
 }
 
+/**
+ * One provider's polling and alerting. Every provider gets the same controls,
+ * so P2 through P4 add rows here by adding a provider id, not a tab.
+ */
+function ProviderSection({
+  id,
+  block,
+  onChange,
+}: {
+  id: ProviderId;
+  block: ProviderSettings;
+  onChange: (patch: Partial<ProviderSettings>) => void;
+}): React.ReactElement {
+  const toggleThreshold = (value: number): void => {
+    const next = block.thresholds.includes(value)
+      ? block.thresholds.filter((entry) => entry !== value)
+      : [...block.thresholds, value].sort((a, b) => a - b);
+    onChange({ thresholds: next });
+  };
+
+  return (
+    <section className="border-t border-white/5 py-5">
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-sm font-medium text-white">
+          {providerLabel(id)}
+        </span>
+        <Toggle
+          checked={block.enabled}
+          onChange={(enabled) => onChange({ enabled })}
+        />
+      </div>
+
+      <div
+        className={
+          block.enabled
+            ? "space-y-4"
+            : "space-y-4 opacity-40 pointer-events-none"
+        }
+      >
+        <div>
+          <div className="mb-2 flex justify-between">
+            <span className="text-xs text-[#777]">Check every</span>
+            <span className="text-xs font-bold text-[#cc785c]">
+              {block.intervalSec}s
+            </span>
+          </div>
+          <input
+            type="range"
+            min={INTERVAL_MIN_SEC}
+            max={INTERVAL_MAX_SEC}
+            step={5}
+            value={block.intervalSec}
+            onChange={(e) =>
+              onChange({ intervalSec: parseInt(e.target.value, 10) })
+            }
+            className="h-0.5 w-full appearance-none bg-[#222] accent-[#cc785c]"
+          />
+        </div>
+
+        <div>
+          <div className="mb-2 text-xs text-[#777]">
+            Alert at, for every limit this provider reports
+          </div>
+          <div className="grid grid-cols-5 gap-x-4">
+            {THRESHOLD_CHOICES.map((value) => {
+              const on = block.thresholds.includes(value);
+              return (
+                <button
+                  key={value}
+                  onClick={() => toggleThreshold(value)}
+                  className="flex flex-col items-center gap-2 text-xs transition-all"
+                >
+                  <span
+                    className={`font-medium ${on ? "text-white" : "text-[#555]"}`}
+                  >
+                    {value}%
+                  </span>
+                  <div
+                    className={`h-1 w-1 rounded-full transition-all ${
+                      on ? "bg-[#cc785c]" : "bg-[#222]"
+                    }`}
+                  />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function SettingsPanel({
   settings,
   isSaving,
@@ -107,17 +264,27 @@ export function SettingsPanel({
   const [draft, setDraft] = useState<WidgetSettings>(settings);
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
 
-  const hasChanges = useMemo(
-    () => JSON.stringify(draft) !== JSON.stringify(settings),
-    [draft, settings],
-  );
+  // Main normalizes what it stores, so a save can come back with a value the
+  // draft does not have (an interval clamped, a threshold deduped). Without
+  // this the panel would keep offering to save a change it already made.
+  useEffect(() => {
+    setDraft(settings);
+  }, [settings]);
 
-  const toggleThreshold = (field: keyof WidgetSettings, value: number) => {
-    const current = (draft[field] as number[]) || [];
-    const next = current.includes(value)
-      ? current.filter((v) => v !== value)
-      : [...current, value].sort((a, b) => a - b);
-    setDraft((prev) => ({ ...prev, [field]: next }));
+  const patch = useMemo(() => diffSettings(settings, draft), [settings, draft]);
+  const hasChanges = Object.keys(patch).length > 0;
+
+  const updateProvider = (
+    id: ProviderId,
+    block: Partial<ProviderSettings>,
+  ): void => {
+    setDraft((prev) => ({
+      ...prev,
+      providers: {
+        ...prev.providers,
+        [id]: { ...prev.providers[id], ...block },
+      },
+    }));
   };
 
   return (
@@ -202,33 +369,9 @@ export function SettingsPanel({
               <div className="space-y-6">
                 <section>
                   <h3 className="mb-2 text-[10px] font-bold uppercase tracking-widest text-[#333]">
-                    Synchronization
+                    Shortcuts
                   </h3>
-                  <div className="py-2">
-                    <div className="mb-3 flex justify-between">
-                      <span className="text-sm font-medium text-white">
-                        Polling Frequency
-                      </span>
-                      <span className="text-xs font-bold text-[#cc785c]">
-                        {draft.pollingInterval}s
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={30}
-                      max={300}
-                      step={5}
-                      value={draft.pollingInterval}
-                      onChange={(e) =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          pollingInterval: parseInt(e.target.value),
-                        }))
-                      }
-                      className="h-0.5 w-full appearance-none bg-[#222] accent-[#cc785c]"
-                    />
-                  </div>
-                  <div className="mt-2 border-t border-white/5 pt-2">
+                  <div className="border-t border-white/5 pt-2">
                     <ShortcutRecorder
                       value={draft.quickEntryShortcut}
                       onChange={(val) =>
@@ -283,96 +426,65 @@ export function SettingsPanel({
               </div>
             )}
 
-            {activeTab === "notifications" && (
-              <div className="space-y-8">
-                <section>
-                  <h3 className="mb-2 text-[10px] font-bold uppercase tracking-widest text-[#333]">
-                    Display
-                  </h3>
-                  <div className="space-y-0 border-t border-white/5">
-                    <div className="flex items-center justify-between py-3">
-                      <p className="text-sm font-medium text-white">
-                        Desktop notifications
-                      </p>
-                      <Toggle
-                        checked={draft.enableDesktopNotifications}
-                        onChange={(v) =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            enableDesktopNotifications: v,
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="flex items-center justify-between border-t border-white/5 py-3">
-                      <p className="text-sm font-medium text-white">
-                        Banner notifications
-                      </p>
-                      <Toggle
-                        checked={draft.enableBannerNotifications}
-                        onChange={(v) =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            enableBannerNotifications: v,
-                          }))
-                        }
-                      />
-                    </div>
-                  </div>
-                </section>
-
-                <section>
-                  <h3 className="mb-2 text-[10px] font-bold uppercase tracking-widest text-[#333]">
-                    Session Thresholds
-                  </h3>
-                  <div className="grid grid-cols-4 gap-x-4 border-t border-white/5 pt-4">
-                    {SESSION_THRESHOLDS.map((val) => (
-                      <button
-                        key={val}
-                        onClick={() =>
-                          toggleThreshold("notificationThresholds", val)
-                        }
-                        className="flex flex-col items-center gap-2 text-xs transition-all"
-                      >
-                        <span
-                          className={`font-medium ${draft.notificationThresholds.includes(val) ? "text-white" : "text-[#555]"}`}
-                        >
-                          {val}%
-                        </span>
-                        <div
-                          className={`h-1 w-1 rounded-full transition-all ${draft.notificationThresholds.includes(val) ? "bg-[#cc785c]" : "bg-[#222]"}`}
-                        />
-                      </button>
-                    ))}
-                  </div>
-                </section>
-
-                <section>
-                  <h3 className="mb-2 text-[10px] font-bold uppercase tracking-widest text-[#333]">
-                    Weekly Thresholds
-                  </h3>
-                  <div className="grid grid-cols-4 gap-x-4 border-t border-white/5 pt-4">
-                    {WEEKLY_THRESHOLDS.map((val) => (
-                      <button
-                        key={val}
-                        onClick={() =>
-                          toggleThreshold("weeklyNotificationThresholds", val)
-                        }
-                        className="flex flex-col items-center gap-2 text-xs transition-all"
-                      >
-                        <span
-                          className={`font-medium ${draft.weeklyNotificationThresholds.includes(val) ? "text-white" : "text-[#555]"}`}
-                        >
-                          {val}%
-                        </span>
-                        <div
-                          className={`h-1 w-1 rounded-full transition-all ${draft.weeklyNotificationThresholds.includes(val) ? "bg-[#cc785c]" : "bg-[#222]"}`}
-                        />
-                      </button>
-                    ))}
-                  </div>
-                </section>
+            {activeTab === "providers" && (
+              <div>
+                <h3 className="mb-2 text-[10px] font-bold uppercase tracking-widest text-[#333]">
+                  Providers
+                </h3>
+                <p className="mb-2 text-[11px] text-[#555]">
+                  A provider that is off is never polled and never alerts.
+                </p>
+                {PROVIDER_IDS.map((id) => (
+                  <ProviderSection
+                    key={id}
+                    id={id}
+                    block={draft.providers[id]}
+                    onChange={(block) => updateProvider(id, block)}
+                  />
+                ))}
               </div>
+            )}
+
+            {activeTab === "notifications" && (
+              <section>
+                <h3 className="mb-2 text-[10px] font-bold uppercase tracking-widest text-[#333]">
+                  Display
+                </h3>
+                <p className="mb-2 text-[11px] text-[#555]">
+                  Which levels raise an alert is set per provider, under
+                  Providers.
+                </p>
+                <div className="space-y-0 border-t border-white/5">
+                  <div className="flex items-center justify-between py-3">
+                    <p className="text-sm font-medium text-white">
+                      Desktop notifications
+                    </p>
+                    <Toggle
+                      checked={draft.enableDesktopNotifications}
+                      onChange={(v) =>
+                        setDraft((prev) => ({
+                          ...prev,
+                          enableDesktopNotifications: v,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="flex items-center justify-between border-t border-white/5 py-3">
+                    <p className="text-sm font-medium text-white">
+                      Banner notifications
+                    </p>
+                    <Toggle
+                      checked={draft.enableBannerNotifications}
+                      onChange={(v) =>
+                        setDraft((prev) => ({
+                          ...prev,
+                          enableBannerNotifications: v,
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+              </section>
             )}
 
             {activeTab === "appearance" && (
@@ -424,7 +536,7 @@ export function SettingsPanel({
               Reset
             </button>
             <button
-              onClick={() => void onSave(draft)}
+              onClick={() => void onSave(patch)}
               disabled={!hasChanges || isSaving}
               className="rounded-full bg-white px-8 py-2.5 text-xs font-bold text-black transition-all hover:scale-105 active:scale-95 disabled:opacity-0 disabled:pointer-events-none"
             >

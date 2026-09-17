@@ -6,11 +6,14 @@ import { CompactView } from "@renderer/components/widget/CompactView";
 import { ExpandedView } from "@renderer/components/widget/ExpandedView";
 import { SettingsPanel } from "@renderer/components/settings/SettingsPanel";
 import { SizeOption } from "@renderer/components/widget/WidgetHeader";
+import { useProviderSubscription } from "@renderer/hooks/useProviderState";
 import {
   ProviderType,
+  SettingsPatch,
   ThresholdCrossedEvent,
   WidgetSettings,
 } from "@shared/types";
+import { providerLabel } from "@shared/provider-labels";
 import { tryBridge } from "@renderer/ipc/bridge";
 
 const isDev = process.env.NODE_ENV === "development";
@@ -31,6 +34,8 @@ export const App = () => {
     checkSession,
     loadAccounts,
   } = useAuthStore();
+  // One subscription for the whole app; every view reads the store it fills.
+  useProviderSubscription();
   const [selectedSize, setSelectedSize] = useState<SizeOption>("Small");
   const [isPinned, setIsPinned] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -86,7 +91,7 @@ export const App = () => {
     }
   };
 
-  const saveSettings = async (nextSettings: WidgetSettings) => {
+  const saveSettings = async (patch: SettingsPatch) => {
     setIsSettingsSaving(true);
     setSettingsError(null);
     try {
@@ -94,7 +99,7 @@ export const App = () => {
       if (!bridge) {
         throw new Error("Settings are available inside the desktop app.");
       }
-      const result = await bridge.settings.update(nextSettings);
+      const result = await bridge.settings.update(patch);
       if (result?.settings) {
         setSettings(result.settings);
       } else {
@@ -112,7 +117,7 @@ export const App = () => {
   const handleProviderChange = async (provider: ProviderType) => {
     setSelectedProvider(provider);
     const authed = await checkSession(provider);
-    if (authed) void tryBridge()?.poller.start(provider);
+    if (authed) void tryBridge()?.providers.refresh(provider);
   };
 
   const handleLogout = async () => {
@@ -185,7 +190,7 @@ export const App = () => {
         if (!claudeAuthed && !chatgptAuthed) return;
         const provider = claudeAuthed ? "claude" : "chatgpt";
         setSelectedProvider(provider);
-        void bridge?.poller.start(provider);
+        void bridge?.providers.refresh(provider);
       },
     );
 
@@ -200,23 +205,19 @@ export const App = () => {
 
     const handleLoginSuccess = () => setAuthenticated(true);
     const handleRefreshNow = () => {
-      void bridge.poller.start(selectedProvider);
+      void bridge.providers.refresh(selectedProvider);
     };
     const handleOpenSettings = async () => {
       setIsSettingsOpen(true);
       await loadSettings();
     };
+    // The window's own label plus two numbers. The old text hardcoded
+    // "weekly limit", which was wrong for every window that was not weekly.
     const handleThreshold = (event: ThresholdCrossedEvent) => {
-      const roundedUsage = Math.round(event.percentage);
-      if (event.scope === "weekly") {
-        showAlertForEvent(
-          `Alert: Your weekly limit crossed ${event.threshold}%. Use wisely.`,
-        );
-      } else {
-        showAlertForEvent(
-          `Alert: You have consumed ${roundedUsage}% (threshold ${event.threshold}%).`,
-        );
-      }
+      showAlertForEvent(
+        `${providerLabel(event.providerId)} ${event.windowLabel} is at ` +
+          `${Math.round(event.usedPercent)}% (alert set at ${event.threshold}%).`,
+      );
     };
 
     const unsubscribes = [
@@ -241,7 +242,7 @@ export const App = () => {
     if (!isDev || !isAuthenticated || didShowAlertPreview) return;
 
     setDidShowAlertPreview(true);
-    showAlertForEvent("Alert: Your weekly limit crossed 75%. Use wisely.");
+    showAlertForEvent("Claude 7d weekly is at 75% (alert set at 75%).");
     return () => clearAlertTimer();
   }, [didShowAlertPreview, isAuthenticated]);
 

@@ -1,19 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { ProviderType } from "@shared/types";
+import { formatAgo } from "@renderer/format";
 import { tryBridge } from "@renderer/ipc/bridge";
-
-function formatLastUpdated(ts: Date | null): string {
-  if (!ts) return "Never";
-  const mins = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
-  if (mins < 1) return "just now";
-  if (mins === 1) return "1 min ago";
-  return `${mins} min ago`;
-}
 
 interface FooterProps {
   provider: ProviderType;
-  lastUpdated: Date | null;
-  label?: string;
+  /** ISO 8601 from the provider's last successful read, or null. */
+  fetchedAt: string | null;
+  label?: string | null;
   onRefresh?: () => void;
   borderTopClass?: string;
   paddingClass?: string;
@@ -22,7 +16,7 @@ interface FooterProps {
 
 export function Footer({
   provider,
-  lastUpdated,
+  fetchedAt,
   label,
   onRefresh,
   borderTopClass = "border-t border-white/5",
@@ -86,7 +80,7 @@ export function Footer({
       {/* Row 2: last updated (left) + version (right) */}
       <div className="flex items-center justify-between">
         <span className="text-[10px] text-white/25">
-          Last updated: {formatLastUpdated(lastUpdated)} {refreshBtn}
+          Last updated: {formatAgo(fetchedAt) ?? "never"} {refreshBtn}
         </span>
         <span className="text-[10px] text-white/15">v{version}</span>
       </div>

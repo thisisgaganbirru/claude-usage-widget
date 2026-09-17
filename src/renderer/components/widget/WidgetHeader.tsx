@@ -8,7 +8,10 @@ export type SizeOption = "Small" | "Medium" | "Large";
 interface WidgetHeaderProps {
   provider: ProviderType;
   onProviderChange: (provider: ProviderType) => void;
-  planType: string;
+  /** The vendor's plan name, or null when it does not report one. */
+  planType: string | null;
+  /** The reading is older than two poll intervals. */
+  isStale?: boolean;
   selectedSize?: SizeOption;
   isPinned?: boolean;
   onTogglePin?: (pinned: boolean) => void;
@@ -22,6 +25,7 @@ export function WidgetHeader({
   provider,
   onProviderChange,
   planType,
+  isStale = false,
   selectedSize = "Small",
   isPinned = true,
   onTogglePin,
@@ -47,8 +51,19 @@ export function WidgetHeader({
         </span>
 
         <span className="select-none whitespace-nowrap rounded-[20px] border border-white/10 bg-white/[0.07] px-[7px] py-0.5 text-[10px] font-medium text-white/45">
-          {planType || "Plan"}
+          {planType ?? "Plan"}
         </span>
+
+        {/* Stale means the numbers are real but old, so they stay on screen
+            dimmed rather than being replaced by an error. */}
+        {isStale ? (
+          <span
+            title="This reading is out of date"
+            className="select-none whitespace-nowrap rounded-[20px] border border-amber-400/20 bg-amber-400/10 px-[7px] py-0.5 text-[10px] font-medium text-amber-300/70"
+          >
+            stale
+          </span>
+        ) : null}
 
         <button
           onClick={() => onTogglePin?.(!isPinned)}

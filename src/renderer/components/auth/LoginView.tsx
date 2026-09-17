@@ -140,7 +140,7 @@ export function LoginView({
       if (result?.success && result?.isAuthenticated) {
         setAuthenticated(true, selectedProvider);
         await loadAccounts(selectedProvider);
-        await bridge.poller.start(selectedProvider);
+        await bridge.providers.refresh(selectedProvider);
       } else {
         setError(
           getLoginErrorMessage(
