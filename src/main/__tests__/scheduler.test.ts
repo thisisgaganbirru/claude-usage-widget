@@ -512,6 +512,24 @@ describe("Scheduler", () => {
 
       harness.scheduler.stop();
     });
+
+    it("announces the drop so the tray stops counting it", async () => {
+      // The reading is gone from the snapshot, but the tray holds its own copy.
+      // Without this event it keeps colouring the icon by a provider the user
+      // switched off.
+      const harness = setup();
+      const dropped: Array<{ providerId: string }> = [];
+      harness.scheduler.on("dropped", (event) => dropped.push(event));
+      harness.scheduler.start();
+      await advance(0);
+
+      harness.settings.providers.claude.enabled = false;
+      harness.scheduler.applySettings();
+
+      expect(dropped).toEqual([{ providerId: "claude" }]);
+
+      harness.scheduler.stop();
+    });
   });
 
   describe("thresholds", () => {

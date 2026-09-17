@@ -161,6 +161,10 @@ export class Scheduler extends EventEmitter {
    * Re-read settings after the user changed them: start what is newly enabled,
    * stop what is newly disabled, and re-time the rest. Threshold state is
    * untouched, so changing an interval never re-fires an alert.
+   *
+   * A provider that goes away emits `dropped`. Without it the tray and the
+   * renderer keep the last reading for a provider the user just switched off,
+   * which is worse than showing nothing: the number keeps aging silently.
    */
   applySettings(): void {
     if (!this.running) return;
@@ -170,6 +174,7 @@ export class Scheduler extends EventEmitter {
       if (enabled.has(id)) continue;
       this.clearTimers(id);
       this.runtimes.delete(id);
+      this.emit("dropped", { providerId: id });
     }
 
     for (const id of enabled) {

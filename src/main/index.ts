@@ -37,6 +37,7 @@ import { originOf } from "./security/url-policy";
 import { SettingsManager } from "./settings/settings-manager";
 import { TrayManager } from "./tray";
 import type { ProviderStateEntry } from "@shared/ipc-contract";
+import type { ProviderId } from "@shared/usage";
 
 const log = createLogger("main");
 
@@ -260,6 +261,10 @@ const app_ready = (): void => {
 
     scheduler.on("state", (entry: ProviderStateEntry) => {
       trayManager?.updateFromState(entry.providerId, entry.state);
+    });
+
+    scheduler.on("dropped", (event: { providerId: ProviderId }) => {
+      trayManager?.forgetProvider(event.providerId);
     });
 
     scheduler.start();
